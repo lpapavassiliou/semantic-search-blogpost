@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:www.elastic.co)",
+      "mcp__plugin_Notion_notion__notion-update-page",
+      "mcp__plugin_Notion_notion__notion-fetch"
+    ]
+  }
+}

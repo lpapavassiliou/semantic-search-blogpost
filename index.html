@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semantic Search for Evernote — Bending Spoons Engineering</title>
+  <meta name="description" content="How we built semantic search for 9 billion Evernote notes: from model selection to deployment at scale.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --surface-2: #1a1a1a;
+      --border: #222222;
+      --border-accent: #333333;
+      --text: #e8e8e8;
+      --text-secondary: #999999;
+      --text-muted: #666666;
+      --accent: #3b82f6;
+      --accent-soft: rgba(59, 130, 246, 0.12);
+      --green: #22c55e;
+      --green-soft: rgba(34, 197, 94, 0.12);
+      --orange: #f59e0b;
+      --orange-soft: rgba(245, 158, 11, 0.12);
+      --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.12);
+      --purple: #a855f7;
+      --purple-soft: rgba(168, 85, 247, 0.12);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(10, 10, 10, 0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text);
+    }
+    .nav-brand svg {
+      width: 28px;
+      height: 28px;
+    }
+    .nav-brand span {
+      font-weight: 600;
+      font-size: 0.95rem;
+      letter-spacing: -0.01em;
+    }
+    .nav-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      background: var(--surface-2);
+      padding: 0.25rem 0.75rem;
+      border-radius: 100px;
+      border: 1px solid var(--border);
+    }
+    .nav-links {
+      display: flex;
+      gap: 0.25rem;
+    }
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      transition: all 0.15s;
+    }
+    .nav-links a:hover {
+      color: var(--text);
+      background: var(--surface-2);
+    }
+
+    /* ── HERO ── */
+    .hero {
+      padding: 10rem 0 5rem;
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1.5rem;
+    }
+    .hero-eyebrow::before {
+      content: '';
+      width: 24px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 1px;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 3.8rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, #3b82f6, #a855f7, #ec4899);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      line-height: 1.8;
+    }
+    .hero-meta {
+      display: flex;
+      gap: 2rem;
+      margin-top: 2.5rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+    }
+    .hero-meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .hero-meta-item .label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .hero-meta-item .value {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    /* ── STATS BANNER ── */
+    .stats {
+      margin: 0 0 4rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .stat {
+      background: var(--surface);
+      padding: 2rem 1.5rem;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.3rem;
+    }
+    .stat-value.blue { color: var(--accent); }
+    .stat-value.green { color: var(--green); }
+    .stat-value.orange { color: var(--orange); }
+    .stat-value.purple { color: var(--purple); }
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* ── ARTICLE ── */
+    .article {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 0 2rem 6rem;
+    }
+
+    .article h2 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 4rem 0 1.5rem;
+      padding-top: 2rem;
+    }
+    .article h2:first-child {
+      margin-top: 0;
+    }
+    .article h3 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin: 3rem 0 1rem;
+    }
+    .article h4 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 2rem 0 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .article p {
+      color: var(--text-secondary);
+      margin-bottom: 1.25rem;
+      font-size: 1.02rem;
+    }
+
+    .article a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.15s;
+    }
+    .article a:hover {
+      border-bottom-color: var(--accent);
+    }
+
+    .article ul, .article ol {
+      color: var(--text-secondary);
+      padding-left: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .article li {
+      margin-bottom: 0.5rem;
+      font-size: 1.02rem;
+    }
+    .article li strong {
+      color: var(--text);
+    }
+
+    .article strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* ── FIGURES ── */
+    .figure {
+      margin: 2rem 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+    .figure img {
+      width: 75%;
+      display: block;
+      margin: 0 auto;
+    }
+    .figure-caption {
+      padding: 1rem 1.25rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      line-height: 1.6;
+    }
+
+    .figure.wide {
+      margin-left: -4rem;
+      margin-right: -4rem;
+    }
+
+    /* ── MATH BLOCK ── */
+    .math-block {
+      margin: 2rem 0;
+      padding: 2rem 2.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      text-align: center;
+      overflow-x: auto;
+    }
+    .math-block .math-section {
+      margin-bottom: 1.5rem;
+    }
+    .math-block .math-section:last-child {
+      margin-bottom: 0;
+    }
+    .math-block .math-label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      text-align: left;
+    }
+    .math-block .math-constraints {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .math-block .math-where {
+      text-align: left;
+      margin-top: 1.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+    }
+    .math-block .math-where ul {
+      list-style: none;
+      padding: 0;
+      margin-top: 0.5rem;
+    }
+    .math-block .math-where li {
+      padding: 0.2rem 0;
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+    }
+    .math-block .math-where li::before {
+      content: "•";
+      margin-right: 0.5rem;
+      color: var(--text-muted);
+    }
+
+    /* ── PRODUCT SCREENSHOTS ── */
+    .product-shot {
+      margin: 2rem 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 40px rgba(0, 0, 0, 0.3);
+    }
+    .product-shot img {
+      width: 75%;
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* ── CODE ── */
+    .code-compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 1.5rem 0;
+    }
+    .code-panel {
+      background: var(--surface);
+    }
+    .code-panel-header {
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .code-panel pre {
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      overflow-x: auto;
+    }
+
+    /* ── TABLE ── */
+    .table-wrapper {
+      margin: 1.5rem 0 2rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .table-wrapper table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .table-wrapper thead {
+      background: var(--surface);
+    }
+    .table-wrapper th {
+      text-align: left;
+      padding: 0.85rem 1rem;
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .table-wrapper td {
+      padding: 0.85rem 1rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+    .table-wrapper tr:last-child td {
+      border-bottom: none;
+    }
+    .table-wrapper tr.winner td {
+      background: var(--accent-soft);
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* ── CALLOUT ── */
+    .callout {
+      margin: 2rem 0;
+      padding: 1.25rem 1.5rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+    .callout.blue {
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      color: #93c5fd;
+    }
+    .callout.green {
+      background: var(--green-soft);
+      border-left: 3px solid var(--green);
+      color: #86efac;
+    }
+    .callout.orange {
+      background: var(--orange-soft);
+      border-left: 3px solid var(--orange);
+      color: #fcd34d;
+    }
+
+    /* ── BEFORE / AFTER ── */
+    .before-after {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+    .before-after .panel {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .before-after .panel-label {
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+    }
+    .before-after .panel-label.bad {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+    .before-after .panel-label.good {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+    .before-after .panel img {
+      width: 100%;
+      display: block;
+    }
+
+    /* ── RERANKER DEMO ── */
+    .reranker-demo {
+      margin: 2rem 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+    .reranker-query {
+      padding: 1rem 1.25rem;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+    }
+    .reranker-columns {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 0;
+    }
+    .reranker-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      color: var(--text-muted);
+      padding: 0 0.75rem;
+    }
+    .reranker-col {
+      position: relative;
+    }
+    .reranker-col-header {
+      padding: 0.65rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+    }
+    .reranker-col-header span {
+      font-weight: 400;
+      opacity: 0.6;
+      margin-left: 0.5rem;
+    }
+    .reranker-col-header.bad {
+      color: var(--text-muted);
+      background: var(--surface-2);
+    }
+    .reranker-col-header.good {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+    .reranker-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .reranker-list li {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      grid-template-rows: auto auto;
+      gap: 0 0.6rem;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+      transition: opacity 0.2s;
+    }
+    .reranker-list li:last-child {
+      border-bottom: none;
+    }
+    .reranker-list .score {
+      grid-row: 1 / 3;
+      align-self: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: var(--surface-2);
+      padding: 0.2rem 0.35rem;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .reranker-list .score.high { color: var(--green); background: var(--green-soft); }
+    .reranker-list .score.mid { color: var(--orange); background: var(--orange-soft); }
+    .reranker-list .score.low { color: var(--text-muted); background: var(--surface-2); }
+    .reranker-list .note-title {
+      color: var(--text);
+      font-weight: 500;
+      line-height: 1.3;
+    }
+    .reranker-list .note-preview {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .reranker-list li.cut {
+      opacity: 0.35;
+      text-decoration: line-through;
+      text-decoration-color: var(--text-muted);
+    }
+    .reranker-list li.cut .note-title,
+    .reranker-list li.cut .note-preview {
+      text-decoration: line-through;
+      text-decoration-color: var(--text-muted);
+    }
+    .reranker-list li.irrelevant {
+      background: rgba(239, 68, 68, 0.04);
+    }
+    .reranker-list li.cutoff-line {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.25rem 1rem;
+      border-bottom: none;
+      background: transparent;
+    }
+    .reranker-list li.cutoff-line::before {
+      content: '';
+      flex: 1;
+      height: 2px;
+      background: var(--red);
+      opacity: 0.6;
+    }
+    .reranker-list li.cutoff-line::after {
+      content: 'cutoff';
+      font-size: 0.65rem;
+      color: var(--red);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      opacity: 0.8;
+    }
+    @media (max-width: 900px) {
+      .reranker-columns {
+        grid-template-columns: 1fr;
+      }
+      .reranker-arrow {
+        transform: rotate(90deg);
+        padding: 0.5rem;
+      }
+    }
+
+    /* ── TECH STACK GRID ── */
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 1.5rem 0 2rem;
+    }
+    .tech-card {
+      background: var(--surface);
+      padding: 1.5rem;
+    }
+    .tech-card-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .tech-card h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 0 0 0.4rem;
+      color: var(--text);
+    }
+    .tech-card p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* ── TOC ── */
+    .toc {
+      position: sticky;
+      top: 80px;
+    }
+    .toc-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+    .toc a {
+      display: block;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.82rem;
+      padding: 0.3rem 0 0.3rem 0.75rem;
+      border-left: 2px solid var(--border);
+      transition: all 0.15s;
+    }
+    .toc a:hover, .toc a.active {
+      color: var(--text);
+      border-left-color: var(--accent);
+    }
+
+    /* ── LAYOUT WITH SIDEBAR TOC ── */
+    .content-layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 5rem 2rem 6rem;
+      display: grid;
+      grid-template-columns: 1fr 200px;
+      gap: 4rem;
+    }
+
+    /* ── SECTION DIVIDER ── */
+    .section-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 3rem 0;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 3rem 2rem;
+    }
+    .footer-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .footer-text {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .footer-cta a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--accent);
+      color: white;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.6rem 1.25rem;
+      border-radius: 8px;
+      transition: opacity 0.15s;
+    }
+    .footer-cta a:hover {
+      opacity: 0.9;
+    }
+
+    /* ── EVAL CARD ── */
+    .eval-card {
+      margin: 2rem 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+    }
+    .eval-card-header {
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--surface-2);
+    }
+    .eval-card-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .eval-card-query {
+      color: var(--text);
+    }
+    .eval-card-meta {
+      padding: 0.65rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+    .eval-card-meta strong {
+      color: var(--green);
+      font-weight: 500;
+    }
+    .eval-card-results {
+      padding: 0;
+      list-style: none;
+      margin: 0;
+    }
+    .eval-card-results li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.55rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+    }
+    .eval-card-results li:last-child {
+      border-bottom: none;
+    }
+    .eval-card-results .rank {
+      color: var(--text-muted);
+      width: 1.5rem;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .eval-card-results .result-score {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .eval-card-results li.match {
+      background: var(--green-soft);
+      color: var(--text);
+    }
+    .eval-card-results li.match .result-score {
+      color: var(--green);
+    }
+
+    /* ── CHART (chunk size) ── */
+    .chart-container {
+      margin: 2rem 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem 1.75rem;
+    }
+    .chart-container svg {
+      width: 100%;
+      height: auto;
+    }
+    .chart-legend {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: 1rem;
+    }
+    .chart-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+    .chart-legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .content-layout {
+        grid-template-columns: 1fr;
+      }
+      .content-layout aside {
+        display: none;
+      }
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .code-compare, .before-after {
+        grid-template-columns: 1fr;
+      }
+      .tech-grid {
+        grid-template-columns: 1fr;
+      }
+      .figure.wide {
+        margin-left: 0;
+        margin-right: 0;
+      }
+      .hero-meta {
+        flex-wrap: wrap;
+        gap: 1.5rem;
+      }
+      .nav-links {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── NAV ─── -->
+<nav>
+  <div class="nav-inner">
+    <a href="https://bendingspoons.com" class="nav-brand" target="_blank" rel="noopener">
+      <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="32" height="32" rx="8" fill="white"/>
+        <path d="M10 8C10 8 14 12 16 16C18 20 22 24 22 24" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M10 24C10 24 14 20 16 16C18 12 22 8 22 8" stroke="#0a0a0a" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+      <span>Bending Spoons</span>
+    </a>
+    <span class="nav-label">Engineering Blog</span>
+    <div class="nav-links">
+      <a href="#pipeline">Pipeline</a>
+      <a href="#deployment">Deployment</a>
+      <a href="#integrations">Integrations</a>
+      <a href="https://bendingspoons.com/careers" target="_blank" rel="noopener">Careers</a>
+    </div>
+  </div>
+</nav>
+
+
+<!-- ─── MAIN CONTENT ─── -->
+<div class="content-layout">
+
+<article class="article">
+
+  <!-- ─── HERO (inside article column) ─── -->
+  <section class="hero">
+    <div class="hero-eyebrow">Evernote AI Engineering</div>
+    <h1>Building Semantic Search <br>for <span class="gradient">9 Billion Notes</span></h1>
+    <p class="hero-sub">
+      How we moved Evernote from keyword matching to meaning-based search — from choosing models to deploying on our own GPU infrastructure, all while keeping user data private.
+    </p>
+    <div class="hero-meta">
+      <div class="hero-meta-item">
+        <span class="label">Team</span>
+        <span class="value">Evernote AI</span>
+      </div>
+      <div class="hero-meta-item">
+        <span class="label">Stack</span>
+        <span class="value">Python, vLLM, TEI, ElasticSearch</span>
+      </div>
+      <div class="hero-meta-item">
+        <span class="label">Timeline</span>
+        <span class="value">2025</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── STATS ─── -->
+  <section class="stats">
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="stat-value blue">9B</div>
+        <div class="stat-label">Notes processed</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value green">5.7K</div>
+        <div class="stat-label">Notes/sec throughput</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value orange">300</div>
+        <div class="stat-label">GPU machines</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value purple">1.8 TB</div>
+        <div class="stat-label">Vector storage</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- § 1 — A NEW SEARCH -->
+  <h2 id="intro">A new kind of search</h2>
+  <p>
+    Evernote users add content every day: notes, documents, images, PDFs, and more. Over time, accounts fill up and finding something from months or years ago becomes a real challenge. The default search had a key limitation: it relied on <strong>exact keyword matching</strong>. If you couldn't remember the precise words you used in a note, you simply wouldn't find it.
+  </p>
+  <p>
+    Semantic search solves this. Instead of matching letters, it matches <strong>meaning</strong>. This opens the door to natural wording and integration with powerful AI features like search overviews, Q&A on your notes, and automated note editing and organization. These tools can't rely on guessing exact keywords — they need a search layer that's flexible but accurate.
+  </p>
+
+  <p>
+    It came with real challenges. Evernote holds <strong>9 billion notes</strong>, making the cost of processing and embedding content significant — both in compute and storage. Notes span a huge range of formats: plain text, bullet lists, reminders, calendar events, audio, and more. Privacy added another hard constraint: many users store sensitive information, so sending data to third-party APIs was not an option. Everything had to stay on our own infrastructure.
+  </p>
+
+  <p>
+    In this post, we walk through how we built the semantic search pipeline end to end — from choosing the right models to deploying and testing at scale.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <!-- § 2 — THE PIPELINE -->
+  <h2 id="pipeline">The pipeline</h2>
+
+  <div class="figure">
+    <img src="images/pipeline-v2.png" alt="High-level architecture diagram showing the semantic search pipeline: 1. Embedding Generation (notes → chunks → embeddings), 2. Vector Search (query + embeddings → relevant chunks), 3. Reranking (chunks + query → scored notes → results)" style="width: 65%; border-radius: 10px;">
+  </div>
+
+  <p>
+    The architecture is built around two models: one for <strong>embedding</strong> and one for <strong>reranking</strong>.
+  </p>
+
+  <ul>
+    <li><strong>Embedding a note.</strong> When a note is saved, it gets split into smaller chunks. Each chunk is run through the embedding model, which converts it into a vector — a list of numbers that captures the meaning of that piece of text. All vectors are stored and indexed.</li>
+    <li><strong>Searching for a query.</strong> When a user types a search query, it gets converted into a vector. We look for the stored vectors closest to the query vector in terms of cosine similarity — determining which notes (and which snippets) are most relevant.</li>
+    <li><strong>Reranking results.</strong> After initial retrieval, a second model scores the results again and reorders them. This surfaces the most relevant content at the top and discards false positives.</li>
+  </ul>
+
+  <!-- § 2.1 — MARKDOWN -->
+  <h3 id="markdown-conversion">Markdown conversion</h3>
+  <p>
+    The first step is converting notes to a readable format. Evernote notes are stored in <strong>ENML</strong>, an XML-based format rich with structure. Great for rendering, not ideal for LLMs — it's more verbose and less interpretable by models. XML headers contain formatting information that dilutes the semantics of the actual content.
+  </p>
+  <p>
+    Compared to Markdown, XML results in more embeddings to search and store. Chunking XML is also problematic because nodes might start and end across different chunks, creating malformed content. Markdown is also convenient when combining semantic search with an LLM to generate text from retrieval results.
+  </p>
+
+  <div class="code-compare">
+    <div class="code-panel">
+      <div class="code-panel-header">ENML source</div>
+      <pre><code>&lt;en-note&gt;
+  &lt;div style="--en-codeblock:true; ..."&gt;
+    &lt;div&gt;import torch&lt;/div&gt;
+    &lt;div&gt;print('hi')&lt;/div&gt;
+  &lt;/div&gt;
+  &lt;ul&gt;
+    &lt;li&gt;&lt;div&gt;Key point 1&lt;/div&gt;&lt;/li&gt;
+    &lt;li&gt;&lt;div&gt;Key point 2&lt;/div&gt;&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/en-note&gt;</code></pre>
+    </div>
+    <div class="code-panel">
+      <div class="code-panel-header">Markdown output</div>
+      <pre><code>import torch
+print('hi')
+
+- Key point 1
+- Key point 2</code></pre>
+    </div>
+  </div>
+  <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
+    A structured note with a code block and bullet points in both formats. Markdown is much more compact and doesn't retain verbose formatting information.
+  </p>
+
+  <!-- § 2.2 — MODEL SELECTION -->
+  <h3 id="model-selection">Embedding model selection</h3>
+  <p>
+    We explored open-source embedding models, looking for one that was:
+  </p>
+  <ul>
+    <li><strong>Accurate for our use case:</strong> The model should handle note-looking text — not just generic passages — with sensible similarity scores.</li>
+    <li><strong>Low cost and latency:</strong> With billions of notes to process, differences in model size or inference efficiency directly impact costs and total machine time.</li>
+  </ul>
+  <p>
+    We used the <a href="https://huggingface.co/spaces/mteb/leaderboard" target="_blank" rel="noopener">MTEB leaderboard</a> to select candidates, then built a custom evaluation framework for final selection. We created a synthetic Evernote account with <strong>481 realistic notes</strong> and <strong>38 hard queries</strong>. Queries were designed to have little or no word overlap with the corresponding note, and sometimes not even match the language.
+  </p>
+
+  <div class="eval-card">
+    <div class="eval-card-header">
+      <span class="eval-card-badge">Question 21/38</span>
+      <span class="eval-card-query">I need a dashboard for my services</span>
+    </div>
+    <div class="eval-card-meta">Expected: <strong>Prometheus</strong></div>
+    <ol class="eval-card-results">
+      <li><span class="rank">1.</span> Search Service — Production Readiness Requirements <span class="result-score">48.08</span></li>
+      <li class="match"><span class="rank">2.</span> Prometheus <span class="result-score">46.02</span></li>
+      <li><span class="rank">3.</span> GROWTH <span class="result-score">42.47</span></li>
+      <li><span class="rank">4.</span> Microservices — search-metrics-service <span class="result-score">40.97</span></li>
+      <li><span class="rank">5.</span> Service Monitoring <span class="result-score">40.87</span></li>
+    </ol>
+  </div>
+  <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
+    Example test case. The model ranked the expected note as second — achieving partial success.
+  </p>
+
+  <div style="margin-top: 2.5rem;"></div>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Acc @1</th>
+          <th>Acc @5</th>
+          <th>Chunk size</th>
+          <th>Overlap</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="winner">
+          <td><a href="https://huggingface.co/Alibaba-NLP/gte-Qwen2-1.5B-instruct" target="_blank" rel="noopener">Qwen2 1.5B Instruct</a></td>
+          <td>61% (23/38)</td>
+          <td>89% (34/38)</td>
+          <td>2000</td>
+          <td>200</td>
+        </tr>
+        <tr>
+          <td><a href="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF" target="_blank" rel="noopener">Qwen3 0.6B</a></td>
+          <td>47% (18/38)</td>
+          <td>71% (27/38)</td>
+          <td>2000</td>
+          <td>200</td>
+        </tr>
+        <tr>
+          <td><a href="https://huggingface.co/Qwen/Qwen3-Embedding-8B" target="_blank" rel="noopener">Qwen3 8B</a></td>
+          <td>61% (23/38)</td>
+          <td>87% (33/38)</td>
+          <td>2000</td>
+          <td>400</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
+    Accuracy scores on the internal dataset. Accuracy@1 = expected note returned first. Accuracy@5 = expected note in top 5.
+  </p>
+
+  <p>
+    We chose <a href="https://huggingface.co/Alibaba-NLP/gte-Qwen2-1.5B-instruct" target="_blank" rel="noopener">Qwen2 1.5B Instruct</a> — top performer on our accuracy test. It also runs with <a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text Embedding Inference</a>, achieving higher inference speed compared to standard Transformers.
+  </p>
+
+  <!-- § 2.3 — CHUNK SIZE -->
+  <h3 id="chunk-size">Chunk size</h3>
+  <p>
+    Large notes aren't fed to the model all at once. Notes with over 100K characters would lose too much information compressed into a single vector. Instead, notes are split into "chunks" that are individually embedded. We went with fixed-length character chunks with overlap — the simplest strategy. Fancier strategies showed unclear gains given the variety of note topics and formats.
+  </p>
+
+  <div class="chart-container">
+    <svg viewBox="0 0 600 300" xmlns="http://www.w3.org/2000/svg">
+      <!-- Grid -->
+      <line x1="60" y1="30" x2="60" y2="250" stroke="#222" stroke-width="1"/>
+      <line x1="60" y1="250" x2="570" y2="250" stroke="#222" stroke-width="1"/>
+      <line x1="60" y1="206" x2="570" y2="206" stroke="#1a1a1a" stroke-width="0.5" stroke-dasharray="4,4"/>
+      <line x1="60" y1="162" x2="570" y2="162" stroke="#1a1a1a" stroke-width="0.5" stroke-dasharray="4,4"/>
+      <line x1="60" y1="118" x2="570" y2="118" stroke="#1a1a1a" stroke-width="0.5" stroke-dasharray="4,4"/>
+      <line x1="60" y1="74" x2="570" y2="74" stroke="#1a1a1a" stroke-width="0.5" stroke-dasharray="4,4"/>
+      <line x1="60" y1="30" x2="570" y2="30" stroke="#1a1a1a" stroke-width="0.5" stroke-dasharray="4,4"/>
+
+      <!-- Y-axis labels -->
+      <text x="52" y="254" fill="#666" font-size="11" text-anchor="end" font-family="Inter, sans-serif">0.55</text>
+      <text x="52" y="210" fill="#666" font-size="11" text-anchor="end" font-family="Inter, sans-serif">0.60</text>
+      <text x="52" y="166" fill="#666" font-size="11" text-anchor="end" font-family="Inter, sans-serif">0.65</text>
+      <text x="52" y="122" fill="#666" font-size="11" text-anchor="end" font-family="Inter, sans-serif">0.70</text>
+      <text x="52" y="78" fill="#666" font-size="11" text-anchor="end" font-family="Inter, sans-serif">0.85</text>
+      <text x="52" y="34" fill="#666" font-size="11" text-anchor="end" font-family="Inter, sans-serif">0.95</text>
+
+      <!-- Y-axis title -->
+      <text x="16" y="145" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif" transform="rotate(-90 16 145)">Accuracy</text>
+
+      <!-- X-axis labels -->
+      <text x="97" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">500</text>
+      <text x="165" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">1000</text>
+      <text x="233" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">1500</text>
+      <text x="301" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">2000</text>
+      <text x="369" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">2500</text>
+      <text x="437" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">3000</text>
+      <text x="505" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">3500</text>
+      <text x="555" y="270" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">4000</text>
+
+      <!-- X-axis title -->
+      <text x="315" y="292" fill="#666" font-size="11" text-anchor="middle" font-family="Inter, sans-serif">Chunk Size (tokens)</text>
+
+      <!-- Accuracy@5 line (orange) — 0.87, 0.89, 0.89, 0.89, 0.92, 0.89, 0.87, 0.87 -->
+      <!-- Y mapping: 0.55→250, 0.95→30; pixel = 250 - (val-0.55)/0.40 * 220 -->
+      <polyline
+        points="97,74 165,63 233,63 301,63 369,46 437,63 505,74 555,74"
+        fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="97" cy="74" r="4" fill="#f59e0b"/>
+      <circle cx="165" cy="63" r="4" fill="#f59e0b"/>
+      <circle cx="233" cy="63" r="4" fill="#f59e0b"/>
+      <circle cx="301" cy="63" r="4" fill="#f59e0b"/>
+      <circle cx="369" cy="46" r="5" fill="#f59e0b" stroke="#0a0a0a" stroke-width="2"/>
+      <circle cx="437" cy="63" r="4" fill="#f59e0b"/>
+      <circle cx="505" cy="74" r="4" fill="#f59e0b"/>
+      <circle cx="555" cy="74" r="4" fill="#f59e0b"/>
+
+      <!-- Accuracy@1 line (blue) — 0.63, 0.66, 0.63, 0.63, 0.66, 0.63, 0.61, 0.63 -->
+      <polyline
+        points="97,206 165,189 233,206 301,206 369,189 437,206 505,217 555,206"
+        fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="97" cy="206" r="4" fill="#3b82f6"/>
+      <circle cx="165" cy="189" r="4" fill="#3b82f6"/>
+      <circle cx="233" cy="206" r="4" fill="#3b82f6"/>
+      <circle cx="301" cy="206" r="4" fill="#3b82f6"/>
+      <circle cx="369" cy="189" r="5" fill="#3b82f6" stroke="#0a0a0a" stroke-width="2"/>
+      <circle cx="437" cy="206" r="4" fill="#3b82f6"/>
+      <circle cx="505" cy="217" r="4" fill="#3b82f6"/>
+      <circle cx="555" cy="206" r="4" fill="#3b82f6"/>
+
+      <!-- Peak annotations -->
+      <text x="369" y="35" fill="#f59e0b" font-size="12" font-weight="600" text-anchor="middle" font-family="Inter, sans-serif">~92%</text>
+      <text x="369" y="180" fill="#3b82f6" font-size="12" font-weight="600" text-anchor="middle" font-family="Inter, sans-serif">~66%</text>
+    </svg>
+    <div class="chart-legend">
+      <div class="chart-legend-item">
+        <div class="chart-legend-dot" style="background: #3b82f6;"></div>
+        Accuracy@1
+      </div>
+      <div class="chart-legend-item">
+        <div class="chart-legend-dot" style="background: #f59e0b;"></div>
+        Accuracy@5
+      </div>
+    </div>
+  </div>
+  <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
+    Retrieval performance from Qwen2 1.5B Instruct varying chunk size. A chunk size around 2500 tokens looks solid.
+  </p>
+
+  <p>
+    We chose a chunk size of <strong>3000 characters</strong> — slightly bigger than the optimal test value — to speed up search and reduce storage costs.
+  </p>
+
+  <!-- § 2.4 — RERANKER -->
+  <h3 id="reranker">Reranker</h3>
+  <p>
+    With the embedding model and chunking strategy in place, we tested the pipeline on internal Evernote accounts. Two things stood out:
+  </p>
+  <ul>
+    <li><strong>Good recall:</strong> The relevant notes appeared among the first results.</li>
+    <li><strong>Bad precision:</strong> Many notes that were empty or not very relevant ranked considerably high.</li>
+  </ul>
+  <p>
+    We added a reranking model to post-process results. Unlike cosine similarity (which operates on compressed latent representations), the reranker looks at query and note tokens directly to assign better scores. This ensures only relevant notes appear in the UI and provides cleaner context for RAG applications.
+  </p>
+
+  <div class="reranker-demo">
+    <div class="reranker-query">Query: <strong>"best restaurants near the office"</strong></div>
+    <div class="reranker-columns">
+      <div class="reranker-col">
+        <div class="reranker-col-header bad">Before reranking <span>cosine similarity</span></div>
+        <ol class="reranker-list">
+          <li class="relevant"><span class="score">0.82</span> <span class="note-title">Lunch spots near HQ</span><span class="note-preview">List of restaurants within walking distance, ratings and…</span></li>
+          <li class="relevant"><span class="score">0.78</span> <span class="note-title">Rome trip food diary</span><span class="note-preview">Day 2: found an amazing trattoria near Piazza Navona…</span></li>
+          <li class="relevant"><span class="score">0.75</span> <span class="note-title">Team dinner planning</span><span class="note-preview">Shortlist of restaurants for the team offsite dinner…</span></li>
+          <li class="irrelevant"><span class="score">0.73</span> <span class="note-title">Meeting notes — Oct 14</span><span class="note-preview">Discussed office layout changes and lunch catering options…</span></li>
+          <li class="irrelevant"><span class="score">0.71</span> <span class="note-title">Weekly groceries</span><span class="note-preview">Milk, eggs, bread, chicken, rice, olive oil, tomatoes…</span></li>
+          <li class="irrelevant"><span class="score">0.70</span> <span class="note-title">Untitled note</span><span class="note-preview"><em>(empty)</em></span></li>
+        </ol>
+      </div>
+      <div class="reranker-arrow">→</div>
+      <div class="reranker-col">
+        <div class="reranker-col-header good">After reranking <span>threshold: 0.1</span></div>
+        <ol class="reranker-list">
+          <li class="relevant"><span class="score high">0.93</span> <span class="note-title">Lunch spots near HQ</span><span class="note-preview">List of restaurants within walking distance, ratings and…</span></li>
+          <li class="relevant"><span class="score high">0.81</span> <span class="note-title">Team dinner planning</span><span class="note-preview">Shortlist of restaurants for the team offsite dinner…</span></li>
+          <li class="relevant"><span class="score mid">0.58</span> <span class="note-title">Rome trip food diary</span><span class="note-preview">Day 2: found an amazing trattoria near Piazza Navona…</span></li>
+          <li class="relevant"><span class="score mid">0.21</span> <span class="note-title">Meeting notes — Oct 14</span><span class="note-preview">Discussed office layout changes and lunch catering…</span></li>
+          <li class="cutoff-line"></li>
+          <li class="cut"><span class="score low">0.09</span> <span class="note-title">Weekly groceries</span><span class="note-preview">Milk, eggs, bread, chicken, rice, olive oil, tomatoes…</span></li>
+          <li class="cut"><span class="score low">0.03</span> <span class="note-title">Untitled note</span><span class="note-preview"><em>(empty)</em></span></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
+    The reranker rescores and reorders results, pushing irrelevant or empty notes below the threshold. Only notes above the cutoff are returned to the user.
+  </p>
+
+  <p>
+    We selected <strong><a href="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B" target="_blank" rel="noopener">Qwen3-Reranker-0.6B</a></strong> — lightweight and efficient with <a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> as inference server.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <!-- § 3 — DEPLOYMENT -->
+  <h2 id="deployment">Deployment</h2>
+
+  <h3 id="infra">Infrastructure and tech stack</h3>
+
+  <div class="tech-grid">
+    <div class="tech-card">
+      <div class="tech-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </div>
+      <h4>Pantheon GPU Infra</h4>
+      <p>Proprietary GPU inference stack with message-driven architecture via <a href="https://www.rabbitmq.com/" target="_blank" rel="noopener">RabbitMQ</a> for natural load buffering.</p>
+    </div>
+    <div class="tech-card">
+      <div class="tech-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
+      </div>
+      <h4>TEI &amp; vLLM</h4>
+      <p>Inference servers delivering 2&ndash;24x throughput over naive PyTorch via dynamic batching and PagedAttention.</p>
+    </div>
+    <div class="tech-card">
+      <div class="tech-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
+      </div>
+      <h4>ElasticSearch</h4>
+      <p>Vector database with HNSW-based approximate k-nearest neighbor search and pre-filtered kNN queries.</p>
+    </div>
+  </div>
+
+  <h4>Pantheon architecture</h4>
+  <p>
+    At Bending Spoons we operate our own GPU inference stack, internally known as <strong>Pantheon</strong>, optimized for running models in production with low latency and high availability. Unlike a typical REST-based serving layer, Pantheon is message-driven: backends publish inference requests to <a href="https://www.rabbitmq.com/" target="_blank" rel="noopener">RabbitMQ</a> rather than calling HTTP endpoints, providing natural load buffering. For semantic search, two applications run: one for embedding and one for reranking.
+  </p>
+
+  <h4>Autoscaling</h4>
+  <p>
+    Pantheon includes a smart autoscaler called <strong>Euclid</strong> that frames scaling as a constrained optimization problem: given current traffic, find the cheapest allocation of VMs across regions that still meets latency and throughput requirements. Unlike traditional metric-threshold autoscalers, it takes a target maximum latency as input and fetches GPU availability status regularly to serve requests at minimum cost.
+  </p>
+
+  <div class="math-block">
+    <div class="math-section">
+      <div class="math-label">Decision variables</div>
+      $$x_1, x_2, \ldots, x_n \quad \text{(machines in Machine Instance Group } i\text{)}$$
+    </div>
+
+    <div class="math-section">
+      <div class="math-label">Objective</div>
+      $$\text{Minimize:} \quad \sum_{i=1}^{n} C_i \, x_i$$
+    </div>
+
+    <div class="math-section">
+      <div class="math-label">Subject to</div>
+      <div class="math-constraints">
+        $$RPS_{\text{queue}} + RPS_{\text{overshoot}} \leq \sum_{i=1}^{n} RPS_i \, x_i$$
+        $$0 \leq x_i \leq \max_i \quad \forall \, i = 1 \ldots n$$
+      </div>
+    </div>
+
+    <div class="math-section">
+      <div class="math-label">Optional additional constraints</div>
+      <div class="math-constraints">
+        $$\text{Latency}(x) \leq L_{\max}$$
+        $$|x_i - x_i^{\text{current}}| \leq \Delta_i$$
+      </div>
+    </div>
+
+    <div class="math-where">
+      <div class="math-label">Where</div>
+      <ul>
+        <li>$x_i$: machines in Machine Instance Group $i$</li>
+        <li>$C_i$: cost per machine</li>
+        <li>$RPS_i$: throughput per machine</li>
+      </ul>
+    </div>
+  </div>
+
+  <h4>Inference servers</h4>
+  <p>
+    Loading a model with Transformers is the simplest approach — but it wastes the vast majority of your GPU. Inference servers add systems-level optimizations achieving <strong>2&ndash;24x throughput</strong> over naive PyTorch:
+  </p>
+  <ul>
+    <li><a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text-Embedding-Inference (TEI)</a> — Hugging Face's purpose-built server for embedding and reranking models. Key optimization: <strong>token-based dynamic batching</strong>, keeping GPU utilization at ~95%.</li>
+    <li><a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> — Open-source LLM inference engine with <a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener">PagedAttention</a>, borrowing virtual memory paging from OS design to manage the KV cache. With <strong>continuous batching</strong>, GPU slots are freed immediately as sequences complete.</li>
+  </ul>
+  <p>
+    In our codebase, inference servers run as sidecar containers alongside <a href="https://fastapi.tiangolo.com/" target="_blank" rel="noopener">FastAPI</a> applications, exposing OpenAI-compatible APIs.
+  </p>
+
+  <h4>ElasticSearch</h4>
+  <p>
+    <a href="https://www.elastic.co/elasticsearch" target="_blank" rel="noopener">Elasticsearch</a> stores and retrieves the embeddings. When a user submits a query, the query embedding is sent to Elasticsearch, which runs an approximate k-nearest neighbor (kNN) search using the <a href="https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/dense-vector" target="_blank" rel="noopener">HNSW algorithm</a>.
+  </p>
+  <p>
+    We maintain two dedicated indices: <strong><code>notes</code></strong> for note text content and <strong><code>ocr</code></strong> for OCR-extracted text from attachments (images, PDFs). This isolation allows independent scaling and reindexing.
+  </p>
+  <p>
+    Elasticsearch supports <a href="https://www.elastic.co/search-labs/blog/vector-search-filtering" target="_blank" rel="noopener"><strong>pre-filtered kNN</strong></a> — filters applied <em>during</em> HNSW graph traversal, not after. Filter conditions are compiled into a BitSet — a compact bitmap of matching documents. During traversal, candidate nodes that fail the filter are still explored (to preserve graph connectivity) but aren't counted toward the <em>k</em> results. This guarantees exactly <em>k</em> results that satisfy both semantic similarity and the deterministic constraints, unlike a post-filter which could reduce the result set below <em>k</em>. Every query is pre-filtered at minimum by user identity (also used as a shard routing key), with optional scoping by notebook, tag, or shared notes.
+  </p>
+
+  <!-- § 3.2 — LOAD BALANCER TUNING -->
+  <h3 id="scaling">Load balancer and autoscaler tuning</h3>
+  <p>
+    Before deploying to production, the pipeline needed to be tested at scale. A naive deployment strategy doesn't work at high request rates: requests get queued and cancelled on timeout.
+  </p>
+
+  <div class="before-after" style="grid-template-columns: 1fr;">
+    <div class="panel">
+      <div class="panel-label bad">Before tuning</div>
+      <img src="images/error-rate-before.png" alt="Dashboard showing ~100% error rate and latencies over 1 minute before tuning">
+    </div>
+    <div class="panel">
+      <div class="panel-label good">After tuning</div>
+      <img src="images/error-rate-after.png" alt="Dashboard showing flat error rate and low latency after tuning">
+    </div>
+  </div>
+
+  <p>
+    We ran a series of indexing experiments processing 1.5M notes per run, tweaking two key parameters:
+  </p>
+  <ul>
+    <li><strong>Parallel requests per GPU worker.</strong> Too few means unsaturated GPU memory and suboptimal throughput. Too many overwhelms workers, increasing latency and causing request loss.</li>
+    <li><strong>Autoscaler reactivity.</strong> Our autoscaler takes a maximum request latency parameter that controls how aggressively it scales.</li>
+  </ul>
+  <p>
+    We found that sending <strong>180 note chunks in parallel</strong> is a good working point, and that the autoscaler tuning should be aggressive (max latency of 100s). This achieved a flat error rate and low latency across millions of requests per hour.
+  </p>
+
+  <div class="callout green">
+    At peak, we hit a rate of <strong>~5,700 notes processed per second</strong>, running 300 GPU machines on the embedding deployment, with 1.8 TB of vectors stored in ElasticSearch. Something that worked well for us was sending note content as links to cloud storage instead of serializing it into the request body. Surprisingly, the bottleneck for processing speed was the request rate to the note database — not AI processing — meaning our autoscaler kept up well.
+  </div>
+
+  <!-- § 3.3 — EMBEDDING ALL NOTES -->
+  <h3 id="embedding-all">Embedding all notes</h3>
+  <p>
+    Turning 3 billion notes into vectors was the longest and most stressful part of the project. During processing — which lasted days — anything could go wrong. We kept careful watch on dashboards, pausing processing at any suspicious metric change.
+  </p>
+  <p>
+    We hit issues with the ENML-to-Markdown conversion crashing on highly structured notes that were heavy to parse. A queue of dead notes was re-injected daily to retry failures. After days of attempts, processing completed and live indexing began — updating embeddings every time a note was edited.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <!-- § 4 — AI INTEGRATIONS -->
+  <h2 id="integrations">AI Integrations</h2>
+
+  <h3 id="quick-answer">Quick Answer</h3>
+
+  <div class="product-shot">
+    <img src="images/quick-answer.png" alt="Evernote Quick Answer feature showing an LLM-generated answer to a search query" style="width: 85%;">
+  </div>
+
+  <p>
+    Our first integration was with the search experience. If the user types a question in the search bar, an LLM replies based on the chunks found relevant by semantic search. Users can find what they need faster, without opening any note. The experience is purely conversational — no query syntax to learn:
+  </p>
+  <ul>
+    <li><em>"What was the WiFi password from the hotel in Rome?"</em></li>
+    <li><em>"Find my notes about the technology choice for the backend in the notebook Swe-Team"</em></li>
+    <li><em>"Summarize my notes tagged meeting from April 2024"</em></li>
+  </ul>
+  <p>
+    Not every query needs a generated answer — sometimes users just want notes. A lightweight <strong>intent detection</strong> step, powered by <strong><a href="https://huggingface.co/microsoft/phi-4" target="_blank" rel="noopener">phi-4</a></strong> via vLLM, runs <strong>in parallel</strong> with document retrieval to decide whether to return note results or generate an AI answer. This adds no extra latency to the search path.
+  </p>
+  <p>
+    To support filters by time or entity, a separate <strong>constraint extraction</strong> call (also phi-4) parses natural-language constraints — like "in notebook Swe-Team" or "from April 2024" — into Evernote's structured query language. These deterministic filters are then passed to ElasticSearch's pre-filtered kNN (described in the <a href="#infra">Infrastructure</a> section), combining semantic similarity with exact constraints in a single query.
+  </p>
+  <p>
+    When a generated answer is needed, we feed both the question and the retrieved chunks into <strong>phi-4</strong>, producing a concise, contextual response grounded in the user's own notes.
+  </p>
+
+  <h3 id="ai-assistant">AI Assistant</h3>
+
+  <div class="product-shot">
+    <img src="images/ai-assistant.png" alt="Evernote AI Assistant analyzing notes about semantic search progress" style="width: 60%;">
+  </div>
+
+  <p>
+    Semantic search becomes extremely powerful when plugged into agents as a tool. Evernote's <a href="https://help.evernote.com/hc/en-us/articles/46319409880211-AI-Assistant" target="_blank" rel="noopener">AI Assistant</a> uses semantic search as its primary mechanism for helping users find and interact with their notes. When the user sends a message, the agent determines if a search is needed, formulates the query, and presents results appropriately — or uses them to produce analyses, reports, or trigger actions like moving notes across notebooks.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <!-- § 5 — CONCLUSION -->
+  <h2 id="conclusion">Conclusion</h2>
+  <p>
+    Integrating semantic search created real product value by powering the retrieval experience. Thanks to vector matching, users can find notes with much less effort. Integrations with LLMs allow extracting note details surgically or analyzing notes in bulk. The feature was generally well appreciated by our users, who found the retrieval intuitive and quite accurate.
+  </p>
+
+  <p>The main factors that contributed to the project's success:</p>
+  <ul>
+    <li>The awareness that a concrete product limitation could be solved with a widely adopted technology</li>
+    <li>Extensive use of <strong>open-source models</strong> to save costs from external providers and retain control over sensitive data</li>
+    <li>Efficient hosting with <strong>inference servers</strong> (TEI, vLLM) compared to standard implementations</li>
+  </ul>
+
+  <div class="callout blue">
+    <strong>Trade-offs worth noting:</strong><br><br>
+    <strong>Speed.</strong> Semantic search is slower than keyword search, which runs on-device and is effectively instant. To avoid degrading the experience, we show keyword results immediately and load semantic results separately. Users may not always understand why two sets of results appear or why the semantic ones take longer.<br><br>
+    <strong>Cost.</strong> Despite all the effort to run embeddings efficiently and limit storage overhead, this feature is expensive. We had hundreds of A100 GPUs running during the initial indexing phase, and some are still needed to keep the feature alive.
+  </div>
+
+  <p>
+    Thanks to both the successful and problematic aspects, this was one of the most interesting projects we've ever worked on. Involving product shaping, model research, and engineering at scale, it's been a great team effort on a hard but extremely rewarding challenge.
+  </p>
+
+  <div class="section-divider"></div>
+
+  <p style="text-align: center; color: var(--text-muted); font-size: 0.9rem; padding: 2rem 0;">
+    Interested in working on challenges like this?
+    <a href="https://bendingspoons.com/careers" target="_blank" rel="noopener" style="color: var(--accent); font-weight: 600;">We're hiring.</a>
+  </p>
+
+</article>
+
+<!-- ─── SIDEBAR TOC ─── -->
+<aside>
+  <div class="toc">
+    <div class="toc-label">On this page</div>
+    <a href="#intro">A new kind of search</a>
+    <a href="#pipeline">The pipeline</a>
+    <a href="#markdown-conversion">Markdown conversion</a>
+    <a href="#model-selection">Model selection</a>
+    <a href="#chunk-size">Chunk size</a>
+    <a href="#reranker">Reranker</a>
+    <a href="#deployment">Deployment</a>
+    <a href="#infra">Infrastructure</a>
+    <a href="#scaling">Scaling</a>
+    <a href="#embedding-all">Embedding all notes</a>
+    <a href="#integrations">AI Integrations</a>
+    <a href="#quick-answer">Quick Answer</a>
+    <a href="#ai-assistant">AI Assistant</a>
+    <a href="#conclusion">Conclusion</a>
+  </div>
+</aside>
+
+</div>
+
+<!-- ─── FOOTER ─── -->
+<footer>
+  <div class="footer-inner">
+    <span class="footer-text">Bending Spoons &middot; Evernote AI Team</span>
+    <span class="footer-cta">
+      <a href="https://bendingspoons.com/careers" target="_blank" rel="noopener">
+        View open positions
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+    </span>
+  </div>
+</footer>
+
+<!-- ─── SCROLL SPY ─── -->
+<script>
+  const tocLinks = document.querySelectorAll('.toc a');
+  const sections = Array.from(tocLinks).map(a => {
+    const id = a.getAttribute('href').slice(1);
+    return document.getElementById(id);
+  }).filter(Boolean);
+
+  function updateToc() {
+    let current = '';
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= 120) {
+        current = section.id;
+      }
+    }
+    tocLinks.forEach(a => {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+    });
+  }
+
+  window.addEventListener('scroll', updateToc, { passive: true });
+  updateToc();
+</script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    if (typeof renderMathInElement !== 'undefined') {
+      renderMathInElement(document.body, {
+        delimiters: [
+          {left: "$$", right: "$$", display: true},
+          {left: "$", right: "$", display: false}
+        ],
+        throwOnError: false
+      });
+    } else {
+      // auto-render may load after DOMContentLoaded due to defer
+      document.querySelector('script[src*="auto-render"]').addEventListener('load', function() {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: "$$", right: "$$", display: true},
+            {left: "$", right: "$", display: false}
+          ],
+          throwOnError: false
+        });
+      });
+    }
+  });
+</script>
+
+</body>
+</html>
