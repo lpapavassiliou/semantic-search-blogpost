@@ -237,7 +237,7 @@
       font-size: 1.05rem;
       font-weight: 600;
       margin: 2rem 0 0.75rem;
-      color: var(--text-secondary);
+      color: var(--text);
     }
 
     .article p {
@@ -1493,7 +1493,7 @@ print('hi')
 
   <h4>ElasticSearch</h4>
   <p>
-    <a href="https://www.elastic.co/elasticsearch" target="_blank" rel="noopener">Elasticsearch</a> is a distributed search and analytics engine widely used as a vector database for semantic search. In our setup, it stores and retrieves the embeddings produced by the embedding model. When a user submits a query, the query embedding is sent to Elasticsearch, which runs an <a href="https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/dense-vector" target="_blank" rel="noopener"><strong>approximate k-nearest neighbor (kNN)</strong></a> search using the <a href="https://arxiv.org/pdf/1603.09320" target="_blank" rel="noopener">HNSW algorithm</a> to find the most similar vectors across the index. Results are ranked by cosine similarity and returned as candidate note chunks, which are then passed to the reranker.
+    <a href="https://www.elastic.co/elasticsearch" target="_blank" rel="noopener">Elasticsearch</a> is a distributed search and analytics engine widely used as a vector database for semantic search. We self-host our Elasticsearch cluster, so user data never leaves our infrastructure. In our setup, it stores and retrieves the embeddings produced by the embedding model. When a user submits a query, the query embedding is sent to Elasticsearch, which runs an <a href="https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/dense-vector" target="_blank" rel="noopener"><strong>approximate k-nearest neighbor (kNN)</strong></a> search using the <a href="https://arxiv.org/pdf/1603.09320" target="_blank" rel="noopener">HNSW algorithm</a> to find the most similar vectors across the index. Results are ranked by cosine similarity and returned as candidate note chunks, which are then passed to the reranker.
   </p>
 
   <p><strong>Index structure</strong></p>
@@ -1510,7 +1510,7 @@ print('hi')
 
   <p><strong>A single index for keyword and semantic search in notes</strong></p>
   <p>
-    A unified index for keyword and semantic search enables natural filtering in semantic search, for cases like "Search notes about <em>dogs</em> in the notebook <code>Animals</code>". If you isolate the indices you can achieve filtered semantic search by running a vector search for "dogs" on the semantic index and a keyword/filter search on the metadata index for "notebook: Animals", then intersect the results. This approach has several complications, stemming from the fact that the two searches return a limited number of results, so the intersection may be incomplete.
+    A unified index for keyword and semantic search enables natural filtering in semantic search, for cases like "Search notes about <em>dogs</em> in the notebook <code>Animals</code>". With two separate indices &mdash; one for embeddings and one for metadata &mdash; you can still achieve filtered semantic search by running a vector search for "dogs" on the semantic index and a keyword/filter search on the metadata index for "notebook: Animals", then intersecting the results. This approach has several complications, stemming from the fact that the two searches return a limited number of results, so the intersection may be incomplete.
   </p>
   <p>
     Consider a user with 1,000 notes tagged "videogames" who searches for "Peach" in notes with the tag "videogames". The pipeline fetches the top 100 semantically relevant notes and the top 100 notes with that tag, then intersects. If the one note about the Peach videogame character happens to be note #999 in the tag list, it never appears in either set of 100, so the intersection is empty, even though a perfect result exists. The same failure mode occurs in reverse: if 1,000 notes are semantically close to "Peach" but only one is tagged "videogames", the intersection can be empty. Over-fetching (grabbing 10&times; more results than needed) mitigates this, but doesn't solve it for large accounts.
@@ -1564,7 +1564,7 @@ print('hi')
   </p>
 
   <div class="callout green">
-    At this point we could start embedding user notes. We hit a rate of <strong>~5,700 notes processed per second</strong>, 300 GPU machines in our deployment running the embedding model, and 1.8 TB of documents stored in the Elasticsearch vector database. Surprisingly, the bottleneck for our processing speed was the request rate to the note database to retrieve the content, and not the one for AI processing, which means that our autoscaler was powerful enough.
+    At this point we could start embedding user notes. We hit a rate of <strong>~5,700 notes processed per second</strong>, 300 GPU machines in our deployment running the embedding model, and 1.8 TB of documents stored in the Elasticsearch vector database. Surprisingly, the bottleneck for our processing speed was not AI processing but the maximum number of concurrent connections to the ~700 sharded note database instances used to retrieve note content, which means that our autoscaler was powerful enough.
   </div>
 
   <!-- § 3.3 — EMBEDDING ALL NOTES -->
