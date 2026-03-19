@@ -1173,14 +1173,6 @@
 
   <div class="code-compare">
     <div class="code-panel">
-      <div class="code-panel-header">Markdown output</div>
-      <pre><code>import torch
-print('hi')
-
-- Key point 1
-- Key point 2</code></pre>
-    </div>
-    <div class="code-panel">
       <div class="code-panel-header">ENML source</div>
       <pre><code>&lt;en-note&gt;
   &lt;div style="--en-codeblock:true; ..."&gt;
@@ -1193,9 +1185,19 @@ print('hi')
   &lt;/ul&gt;
 &lt;/en-note&gt;</code></pre>
     </div>
+    <div class="code-panel">
+      <div class="code-panel-header">Markdown output</div>
+      <pre><code>```
+import torch
+print('hi')
+```
+
+- Key point 1
+- Key point 2</code></pre>
+    </div>
   </div>
   <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
-    Example of a structured note with a code block and bullet points in ENML and Markdown format. The latter is much more compact and does not retain verbose formatting information.
+    Example of a structured note with a code block and bullet points in ENML (left) and its Markdown conversion (right). The latter is much more compact and does not retain verbose formatting information.
   </p>
 
   <!-- § 2.2 — MODEL SELECTION -->
