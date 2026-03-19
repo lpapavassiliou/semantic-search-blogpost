@@ -1470,11 +1470,13 @@ print('hi')
   <div class="before-after" style="grid-template-columns: 1fr;">
     <div class="panel">
       <div class="panel-label bad">Before tuning</div>
-      <img src="images/error-rate-before.png" alt="The error rate at first was almost 100% as the autoscaler was not spawning machines fast enough. Moreover, the latencies were consistently over 1 minute, causing timeouts.">
+      <img src="images/error-rate-before.svg" alt="The error rate at first was almost 100% as the autoscaler was not spawning machines fast enough.">
+      <img src="images/latency-before.svg" alt="The latencies were consistently over 1 minute, causing timeouts." style="margin-top: 12px;">
     </div>
     <div class="panel">
       <div class="panel-label good">After tuning</div>
-      <img src="images/error-rate-after.png" alt="After tuning the load balancer and the autoscaler, the deployment is able to handle millions of embedding requests in an hour with low latency and minimal failure.">
+      <img src="images/error-rate-after.svg" alt="After tuning, the error rate dropped to essentially 0%.">
+      <img src="images/latency-after.svg" alt="After tuning, latencies stayed well under 1 minute with a smooth decline." style="margin-top: 12px;">
     </div>
   </div>
 
