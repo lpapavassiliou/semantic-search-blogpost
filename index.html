@@ -855,6 +855,79 @@
       border-radius: 50%;
     }
 
+    /* ── PASSWORD OVERLAY ── */
+    #password-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #password-overlay .pw-box {
+      text-align: center;
+      max-width: 340px;
+      width: 100%;
+      padding: 0 1.5rem;
+    }
+    #password-overlay .pw-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1.5rem;
+    }
+    #password-overlay h2 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+    #password-overlay .pw-hint {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    #password-overlay form {
+      display: flex;
+      gap: 0.5rem;
+    }
+    #password-overlay input {
+      flex: 1;
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border-accent);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #password-overlay input:focus {
+      border-color: var(--accent);
+    }
+    #password-overlay button {
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: white;
+      font-size: 0.9rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    #password-overlay button:hover {
+      opacity: 0.9;
+    }
+    #password-overlay .pw-error {
+      font-size: 0.82rem;
+      color: var(--red);
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+    }
+
     /* ── RESPONSIVE ── */
     @media (max-width: 900px) {
       .content-layout {
@@ -888,8 +961,22 @@
 </head>
 <body>
 
+<!-- ─── PASSWORD GATE ─── -->
+<div id="password-overlay">
+  <div class="pw-box">
+    <div class="pw-icon">🔒</div>
+    <h2>This post is private</h2>
+    <p class="pw-hint">Enter the password to continue.</p>
+    <form id="pw-form">
+      <input type="password" id="pw-input" placeholder="Password" autocomplete="off" autofocus>
+      <button type="submit">Enter</button>
+    </form>
+    <p class="pw-error" id="pw-error"></p>
+  </div>
+</div>
+
 <!-- ─── NAV ─── -->
-<nav>
+<nav style="display:none">
   <div class="nav-inner">
     <a href="https://bendingspoons.com" class="nav-brand" target="_blank" rel="noopener">
       <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -911,7 +998,7 @@
 
 
 <!-- ─── MAIN CONTENT ─── -->
-<div class="content-layout">
+<div class="content-layout" style="display:none">
 
 <article class="article">
 
@@ -1526,7 +1613,7 @@ print('hi')
 </div>
 
 <!-- ─── FOOTER ─── -->
-<footer>
+<footer style="display:none">
   <div class="footer-inner">
     <span class="footer-text">Bending Spoons &middot; Evernote AI Team</span>
     <span class="footer-cta">
@@ -1585,6 +1672,39 @@ print('hi')
       });
     }
   });
+</script>
+
+<!-- ─── PASSWORD GATE LOGIC ─── -->
+<script>
+(function() {
+  const HASH = 'b493d48364afe44d11c0165cf470a4164d1e2609911ef998be868d46ade3de4e';
+
+  function showContent() {
+    document.getElementById('password-overlay').remove();
+    document.querySelector('nav').style.display = '';
+    document.querySelector('.content-layout').style.display = '';
+    document.querySelector('footer').style.display = '';
+  }
+
+  if (sessionStorage.getItem('blog-auth') === 'ok') {
+    showContent();
+  } else {
+    document.getElementById('pw-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      var val = document.getElementById('pw-input').value;
+      var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(val));
+      var hex = Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+      if (hex === HASH) {
+        sessionStorage.setItem('blog-auth', 'ok');
+        showContent();
+      } else {
+        document.getElementById('pw-error').textContent = 'Wrong password.';
+        document.getElementById('pw-input').value = '';
+        document.getElementById('pw-input').focus();
+      }
+    });
+  }
+})();
 </script>
 
 </body>
