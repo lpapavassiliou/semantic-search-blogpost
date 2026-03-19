@@ -963,18 +963,18 @@
   <!-- § 1 — A NEW SEARCH -->
   <h2 id="intro">A new kind of search</h2>
   <p>
-    Evernote users add content every day: notes, documents, images, PDFs, and more. Over time, accounts fill up and finding something from months or years ago becomes a real challenge. The default search had a key limitation: it relied on <strong>exact keyword matching</strong>. If you couldn't remember the precise words you used in a note, you simply wouldn't find it.
+    Evernote users add content every day: notes, documents, images, PDFs, and more. Over time, accounts fill up, and finding something from months or years ago becomes a real challenge. The default search experience has a key limitation: it relies on <strong>exact keyword matching</strong>. If you can't remember the precise words you used in a note, you won't find it.
   </p>
   <p>
-    Semantic search solves this. Instead of matching letters, it matches <strong>meaning</strong>. This opens the door to natural wording and integration with powerful AI features like search overviews, Q&A on your notes, and automated note editing and organization. These tools can't rely on guessing exact keywords — they need a search layer that's flexible but accurate.
-  </p>
-
-  <p>
-    It came with real challenges. Evernote holds <strong>9 billion notes</strong>, making the cost of processing and embedding content significant — both in compute and storage. Notes span a huge range of formats: plain text, bullet lists, reminders, calendar events, audio, and more. Privacy added another hard constraint: many users store sensitive information, so sending data to third-party APIs was not an option. Everything had to stay on our own infrastructure.
+    Semantic search solves this. Instead of matching letters, it matches <strong>meaning</strong>. This opens the door to natural wording and integration with powerful AI features like search overviews, Q&A on your notes, and automated note editing and organization. These tools can't rely on guessing exact keywords. They need a search layer that's flexible but accurate. Overall, semantic search can change Evernote's search experience from the ground up!
   </p>
 
   <p>
-    In this post, we walk through how we built the semantic search pipeline end to end — from choosing the right models to deploying and testing at scale.
+    Semantic search came with real challenges. Evernote holds <strong>9 billion notes</strong>, making the cost of processing and embedding content significant both in compute and storage. Notes also span a huge range of formats: plain text, bullet lists, reminders, calendar events, audio, and more. Supporting all of these, across multiple languages and topics, makes quality hard to measure and guarantee. Privacy added another hard constraint. Many users store sensitive information in Evernote, such as phone numbers, work documents, and personal records. While we work with trusted third-party partners in other contexts, we wanted users to feel completely confident that their notes never leave our infrastructure, so we built the entire semantic search pipeline in-house.
+  </p>
+
+  <p>
+    In this post, we walk through how we built the semantic search pipeline end to end, from choosing the right models to deploying and testing at scale. It was a challenging and rewarding project, and we hope our experience will be useful to other developers tackling similar problems.
   </p>
 
   <div class="section-divider"></div>
@@ -987,25 +987,42 @@
   </div>
 
   <p>
-    The architecture is built around two models: one for <strong>embedding</strong> and one for <strong>reranking</strong>.
+    The architecture is simple and is built around two models: one for <strong>embedding</strong> and one for <strong>reranking</strong>.
   </p>
 
   <ul>
-    <li><strong>Embedding a note.</strong> When a note is saved, it gets split into smaller chunks. Each chunk is run through the embedding model, which converts it into a vector — a list of numbers that captures the meaning of that piece of text. All vectors are stored and indexed.</li>
-    <li><strong>Searching for a query.</strong> When a user types a search query, it gets converted into a vector. We look for the stored vectors closest to the query vector in terms of cosine similarity — determining which notes (and which snippets) are most relevant.</li>
-    <li><strong>Reranking results.</strong> After initial retrieval, a second model scores the results again and reorders them. This surfaces the most relevant content at the top and discards false positives.</li>
+    <li><strong>Embedding a note.</strong> When a note is saved, it gets split into smaller chunks. Each chunk is then run through the embedding model, resulting in vectors that get stored and indexed.</li>
+    <li><strong>Searching for a query.</strong> When a user types a search query, it gets converted into an embedding. We then look for the stored vectors that are closest to the query vector in terms of cosine similarity. Cosine similarity determines which notes are most relevant to the query and, more precisely, what note snippet matched.</li>
+    <li><strong>Reranking results.</strong> To improve accuracy, we add a reranking pass: a second model takes the query and each retrieved chunk together and scores their relevance as a pair. This cross-encoder architecture allows direct attention between the query and the content at the tokens-level, producing more accurate relevance scores than the comparison of embeddings.</li>
   </ul>
 
-  <!-- § 2.1 — MARKDOWN -->
-  <h3 id="markdown-conversion">Markdown conversion</h3>
   <p>
-    The first step is converting notes to a readable format. Evernote notes are stored in <strong>ENML</strong>, an XML-based format rich with structure. Great for rendering, not ideal for LLMs — it's more verbose and less interpretable by models. XML headers contain formatting information that dilutes the semantics of the actual content.
+    Building this system required several key steps.
   </p>
+
+  <!-- § 2.1 — MARKDOWN -->
+  <h3 id="markdown-conversion">Markdown Conversion</h3>
   <p>
-    Compared to Markdown, XML results in more embeddings to search and store. Chunking XML is also problematic because nodes might start and end across different chunks, creating malformed content. Markdown is also convenient when combining semantic search with an LLM to generate text from retrieval results.
+    The very first step is to convert ENML to a clean, readable format, such as Markdown. Evernote notes are stored in <strong>ENML</strong>, a custom XML-based format rich with structure. ENML is designed for rendering. It stores information about the components the note is made of in its nodes: titles, images, tasks, and so on. ENML is not convenient for embedding:
+  </p>
+  <ul>
+    <li><strong>Token inefficiency.</strong> XML formats use many separators and metadata that inflate token count without bringing semantic value. Compared to Markdown, XML would result in more embeddings to compute, store, and search, increasing embedding costs at scale, assuming that the chunk size stays fixed.</li>
+    <li><strong>Chunking is problematic.</strong> When XML files are chunked, the syntax can easily break. A chunk might start in the middle of a tag, leaving the model with incomplete information about the relationship between the nodes.</li>
+    <li><strong>Models might not be familiar with ENML.</strong> Most models are trained extensively in Markdown. Instead, the models' attention might be less effective on custom nodes to store tasks or calendar blocks.</li>
+  </ul>
+  <p>
+    We developed a conversion logic in house for each ENML node, extracting the core information and dropping formatting details such as the color of the text. The goal is to strip formatting information, simplify the document's structure, and prepare the text for downstream models. On real user notes, we have estimated that the Markdown version of the note is about <strong>0.37 times</strong> the size of the note in ENML.
   </p>
 
   <div class="code-compare">
+    <div class="code-panel">
+      <div class="code-panel-header">Markdown output</div>
+      <pre><code>import torch
+print('hi')
+
+- Key point 1
+- Key point 2</code></pre>
+    </div>
     <div class="code-panel">
       <div class="code-panel-header">ENML source</div>
       <pre><code>&lt;en-note&gt;
@@ -1019,30 +1036,28 @@
   &lt;/ul&gt;
 &lt;/en-note&gt;</code></pre>
     </div>
-    <div class="code-panel">
-      <div class="code-panel-header">Markdown output</div>
-      <pre><code>import torch
-print('hi')
-
-- Key point 1
-- Key point 2</code></pre>
-    </div>
   </div>
   <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
-    A structured note with a code block and bullet points in both formats. Markdown is much more compact and doesn't retain verbose formatting information.
+    Example of a structured note with a code block and bullet points in ENML and Markdown format. The latter is much more compact and does not retain verbose formatting information.
   </p>
 
   <!-- § 2.2 — MODEL SELECTION -->
   <h3 id="model-selection">Embedding model selection</h3>
   <p>
-    We explored open-source embedding models, looking for one that was:
+    At this point, we had the material to process, but not yet a model to use. Training from scratch requires extensive effort to create a synthetic database, since we don't use customers' data for training. At the same time, using a hosted API would require sending user content to a third party. Open-source embedding models gave us the best of both worlds: state-of-the-art quality we could run entirely within our own infrastructure, with full control over costs, customization, and maintainability.
+  </p>
+  <p>
+    Our goal was to find an open-source embedding model that was:
   </p>
   <ul>
-    <li><strong>Accurate for our use case:</strong> The model should handle note-looking text — not just generic passages — with sensible similarity scores.</li>
-    <li><strong>Low cost and latency:</strong> With billions of notes to process, differences in model size or inference efficiency directly impact costs and total machine time.</li>
+    <li><strong>Accurate for our use case:</strong> The ideal embedding model should allow for sensible similarity scores, i.e., relevant notes should have higher scores than the others. We specifically care about the ability of the model to handle note-looking pieces of text, not just any text.</li>
+    <li><strong>Low cost and latency:</strong> The model's throughput is essential for quick and cheap processing of the documents. Given that we have billions of notes to process, a difference in model size or inference efficiency can significantly impact costs and the total machine time.</li>
   </ul>
   <p>
-    We used the <a href="https://huggingface.co/spaces/mteb/leaderboard" target="_blank" rel="noopener">MTEB leaderboard</a> to select candidates, then built a custom evaluation framework for final selection. We created a synthetic Evernote account with <strong>481 realistic notes</strong> and <strong>38 hard queries</strong>. Queries were designed to have little or no word overlap with the corresponding note, and sometimes not even match the language.
+    We used the <a href="https://huggingface.co/spaces/mteb/leaderboard" target="_blank" rel="noopener">MTEB leaderboard</a> to select our candidates, and we defined a custom evaluation framework for the final selection. MTEB is a public benchmark that evaluates embedding models with various datasets and retrieval task types. Given that our use case in Evernote is also quite broad, we considered the MTEB score a reliable prior for models' accuracy. At the time of testing, these were considered among the best lightweight models: <a href="https://huggingface.co/Alibaba-NLP/gte-Qwen2-1.5B-instruct" target="_blank" rel="noopener">Qwen2 1.5B Instruct</a>, <a href="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF" target="_blank" rel="noopener">Qwen3 Embedding 0.6B</a>, GTE Multilingual Base 0.4B, E5 Multilingual Large Instruct, and <a href="https://huggingface.co/Qwen/Qwen3-Embedding-8B" target="_blank" rel="noopener">Qwen3 Embedding 8B</a>.
+  </p>
+  <p>
+    Some of them proved to be inferior in early tests and were discarded. To select the winner, we implemented a custom evaluation framework within a synthetic Evernote account containing <strong>481 realistic notes</strong> and <strong>38 hard queries</strong>. The task was to embed the query and the notes so that the note containing the information about the query's topic would score the highest as possible in the ranking. Queries were designed by hand to have little or no word overlap with the corresponding note, and sometimes not even match the language. Notes were truncated when too long, but other than that, no chunking was done.
   </p>
 
   <div class="eval-card">
@@ -1106,13 +1121,13 @@ print('hi')
   </p>
 
   <p>
-    We chose <a href="https://huggingface.co/Alibaba-NLP/gte-Qwen2-1.5B-instruct" target="_blank" rel="noopener">Qwen2 1.5B Instruct</a> — top performer on our accuracy test. It also runs with <a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text Embedding Inference</a>, achieving higher inference speed compared to standard Transformers.
+    We chose <a href="https://huggingface.co/Alibaba-NLP/gte-Qwen2-1.5B-instruct" target="_blank" rel="noopener">Qwen2 1.5B Instruct</a> as an embedding model, the top performer on our accuracy test. On top of that, the model could be run using <a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text Embedding Inference</a>, a toolkit that allows inference at high speed, which is useful to keep costs under control.
   </p>
 
   <!-- § 2.3 — CHUNK SIZE -->
   <h3 id="chunk-size">Chunk size</h3>
   <p>
-    Large notes aren't fed to the model all at once. Notes with over 100K characters would lose too much information compressed into a single vector. Instead, notes are split into "chunks" that are individually embedded. We went with fixed-length character chunks with overlap — the simplest strategy. Fancier strategies showed unclear gains given the variety of note topics and formats.
+    Large notes aren't fed to the model all at once. There are notes with over 100K characters, and compressing all that information into a single vector would be lossy. Instead, notes are split into "chunks," which are embedded individually. Though there are several strategies for chunking that aim at preserving paragraphs, sentences, or token size, we went for the simplest strategy, with a fixed length of characters and an overlap. We experimented with tokenization, but it was too CPU demanding compared to the alternative, and we did not observe significant quality gains that would justify its adoption. In our experience, the chunk size does not affect retrieval accuracy much: we tested several chunk sizes in our test notes and noticed little change in performance.
   </p>
 
   <div class="chart-container">
@@ -1193,11 +1208,11 @@ print('hi')
     </div>
   </div>
   <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
-    Retrieval performance from Qwen2 1.5B Instruct varying chunk size. A chunk size around 2500 tokens looks solid.
+    Retrieval performance from our embedding model Qwen2 1.5B Instruct varying chunk size. The change is limited, but a chunk size of around 2500 characters looks solid.
   </p>
 
   <p>
-    We chose a chunk size of <strong>3000 characters</strong> — slightly bigger than the optimal test value — to speed up search and reduce storage costs.
+    In the end, we chose a chunk size of <strong>3000 characters</strong>, slightly bigger than the optimal value from tests, to speed up search and reduce the storage costs.
   </p>
 
   <!-- § 2.4 — RERANKER -->
@@ -1206,11 +1221,14 @@ print('hi')
     With the embedding model and chunking strategy in place, we tested the pipeline on internal Evernote accounts. Two things stood out:
   </p>
   <ul>
-    <li><strong>Good recall:</strong> The relevant notes appeared among the first results.</li>
-    <li><strong>Bad precision:</strong> Many notes that were empty or not very relevant ranked considerably high.</li>
+    <li><strong>Good Recall:</strong> The relevant notes appeared among the first results.</li>
+    <li><strong>Bad Precision:</strong> Many notes that were empty or not so relevant ranked considerably high.</li>
   </ul>
   <p>
-    We added a reranking model to post-process results. Unlike cosine similarity (which operates on compressed latent representations), the reranker looks at query and note tokens directly to assign better scores. This ensures only relevant notes appear in the UI and provides cleaner context for RAG applications.
+    We added a reranking model to post-process results. While embedding-based retrieval scores query and document separately via cosine similarity over their vector representations, a reranker takes the concatenation of query and document as input and outputs a relevance score directly. Trained on large datasets of query&ndash;document pairs with relevance labels, rerankers learn to perform token-level comparisons between the two texts, catching relevance signals that are lost when information is compressed into a single embedding vector. This makes them slower &mdash; they must evaluate each candidate individually &mdash; but significantly more precise, which is exactly what we needed at this stage of the pipeline.
+  </p>
+  <p>
+    With a reranker in place, only genuinely relevant notes surface in the UI, and RAG applications receive a cleaner context since extra chunks can be pruned more aggressively without hurting recall.
   </p>
 
   <div class="reranker-demo">
@@ -1247,7 +1265,7 @@ print('hi')
   </p>
 
   <p>
-    We selected <strong><a href="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B" target="_blank" rel="noopener">Qwen3-Reranker-0.6B</a></strong> — lightweight and efficient with <a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> as inference server.
+    As a reranker model, we selected <strong><a href="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B" target="_blank" rel="noopener">Qwen3-Reranker-0.6B</a></strong>. This model is lightweight and can be run very efficiently with <a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> as an inference server. This improved precision significantly.
   </p>
 
   <div class="section-divider"></div>
@@ -1262,140 +1280,148 @@ print('hi')
       <div class="tech-card-icon">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       </div>
-      <h4>Pantheon GPU Infra</h4>
-      <p>Proprietary GPU inference stack with message-driven architecture via <a href="https://www.rabbitmq.com/" target="_blank" rel="noopener">RabbitMQ</a> for natural load buffering.</p>
+      <h4>Proprietary AI Infrastructure</h4>
+      <p>Proprietary GPU inference stack to run AI models on GPUs at large scale.</p>
     </div>
     <div class="tech-card">
       <div class="tech-card-icon">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>
       </div>
-      <h4>TEI &amp; vLLM</h4>
-      <p>Inference servers delivering 2&ndash;24x throughput over naive PyTorch via dynamic batching and PagedAttention.</p>
+      <h4>Inference Servers</h4>
+      <p>vLLM and HuggingFace TEI for fast, high-throughput serving of the embedding and reranking models.</p>
     </div>
     <div class="tech-card">
       <div class="tech-card-icon">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
       </div>
       <h4>ElasticSearch</h4>
-      <p>Vector database with HNSW-based approximate k-nearest neighbor search and pre-filtered kNN queries.</p>
+      <p>Vector database to store embeddings and search.</p>
     </div>
   </div>
 
-  <h4>Pantheon architecture</h4>
+  <h4>Proprietary AI infrastructure</h4>
   <p>
-    At Bending Spoons we operate our own GPU inference stack, internally known as <strong>Pantheon</strong>, optimized for running models in production with low latency and high availability. Unlike a typical REST-based serving layer, Pantheon is message-driven: backends publish inference requests to <a href="https://www.rabbitmq.com/" target="_blank" rel="noopener">RabbitMQ</a> rather than calling HTTP endpoints, providing natural load buffering. For semantic search, two applications run: one for embedding and one for reranking.
+    At Bending Spoons, we maintain a proprietary GPU inference platform, internally known as Pantheon, built for scalability and cost-efficient serving at high request volumes. Pantheon is designed for throughput-oriented workloads, meaning scenarios with a large number of requests where strict real-time latency constraints do not apply. This use case is a natural fit: the request volume is substantial, and while the system does not guarantee ultra-low latency, we don't have the urgency of embedding notes right as they are created or updated: a user rarely needs help retrieving a note they have just written, so messages can wait in the queue for tens of seconds without impacting user experience.
   </p>
 
-  <h4>Autoscaling</h4>
+  <p><strong>Architecture</strong></p>
   <p>
-    Pantheon includes a smart autoscaler called <strong>Euclid</strong> that frames scaling as a constrained optimization problem: given current traffic, find the cheapest allocation of VMs across regions that still meets latency and throughput requirements. Unlike traditional metric-threshold autoscalers, it takes a target maximum latency as input and fetches GPU availability status regularly to serve requests at minimum cost.
+    Pantheon is a collection of deployments, each with a specific GPU model, autoscaler, and running a different AI application. A deployment is made of VMs hosting a model container. Unlike a typical REST-based serving layer, Pantheon is message-driven: backends publish inference requests to RabbitMQ rather than calling HTTP endpoints directly, which provides natural load balancing. Pantheon routes each message to the appropriate GPU workers, runs inference, and returns results asynchronously. For semantic search, two applications are running: one for the embedding model and one for the reranker.
   </p>
 
-  <div class="math-block">
-    <div class="math-section">
-      <div class="math-label">Decision variables</div>
-      $$x_1, x_2, \ldots, x_n \quad \text{(machines in Machine Instance Group } i\text{)}$$
-    </div>
-
-    <div class="math-section">
-      <div class="math-label">Objective</div>
-      $$\text{Minimize:} \quad \sum_{i=1}^{n} C_i \, x_i$$
-    </div>
-
-    <div class="math-section">
-      <div class="math-label">Subject to</div>
-      <div class="math-constraints">
-        $$RPS_{\text{queue}} + RPS_{\text{overshoot}} \leq \sum_{i=1}^{n} RPS_i \, x_i$$
-        $$0 \leq x_i \leq \max_i \quad \forall \, i = 1 \ldots n$$
-      </div>
-    </div>
-
-    <div class="math-section">
-      <div class="math-label">Optional additional constraints</div>
-      <div class="math-constraints">
-        $$\text{Latency}(x) \leq L_{\max}$$
-        $$|x_i - x_i^{\text{current}}| \leq \Delta_i$$
-      </div>
-    </div>
-
-    <div class="math-where">
-      <div class="math-label">Where</div>
-      <ul>
-        <li>$x_i$: machines in Machine Instance Group $i$</li>
-        <li>$C_i$: cost per machine</li>
-        <li>$RPS_i$: throughput per machine</li>
-      </ul>
-    </div>
-  </div>
+  <p><strong>Autoscaling</strong></p>
+  <p>
+    Our embedding workers run on an internal platform that adjusts the number of machines based on demand. Getting the autoscaling policy right proved to be one of the most impactful optimizations across the entire pipeline.
+  </p>
+  <p>
+    A common autoscaling strategy is to estimate each machine's throughput capacity (messages per second) and provision enough machines to match the incoming rate. This approach can fail for inference servers if their ability to process requests in parallel is not accounted for in the capacity estimation. An autoscaler could see that the machine is always processing something and concludes it is at full capacity, even if the GPU could handle 10x more concurrent work. In our case, each note took roughly 300ms to process, so receiving just 4&ndash;5 messages per second was enough for the autoscaler to consider the machine saturated, while an A100 GPU can handle ~250 messages/second incoming at ~40% GPU utilization.
+  </p>
+  <p>
+    We also added stabilization controls: averaging the metric over a 10-minute window and enforcing cooldown periods between scaling events to avoid oscillation, since GPU machines take several minutes to boot. Scale-down is gradual; scale-up is unrestricted.
+  </p>
 
   <h4>Inference servers</h4>
   <p>
-    Loading a model with Transformers is the simplest approach — but it wastes the vast majority of your GPU. Inference servers add systems-level optimizations achieving <strong>2&ndash;24x throughput</strong> over naive PyTorch:
+    To serve these models in production, we used dedicated inference servers rather than loading them directly with PyTorch. Inference servers are optimized runtimes that sit between the application and the model: they accept requests over HTTP, batch them dynamically, and run inference on the GPU with optimizations such as continuous batching and KV caching. Since both embedding and reranking models are transformer-based, they benefit from these optimizations, achieving significantly higher throughput than a naive PyTorch forward pass.
+  </p>
+  <p>
+    We used two popular implementations for inference servers:
   </p>
   <ul>
-    <li><a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text-Embedding-Inference (TEI)</a> — Hugging Face's purpose-built server for embedding and reranking models. Key optimization: <strong>token-based dynamic batching</strong>, keeping GPU utilization at ~95%.</li>
-    <li><a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> — Open-source LLM inference engine with <a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener">PagedAttention</a>, borrowing virtual memory paging from OS design to manage the KV cache. With <strong>continuous batching</strong>, GPU slots are freed immediately as sequences complete.</li>
+    <li><a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text-Embedding-Inference</a> is Hugging Face's purpose-built server for embedding and reranking models. Its key optimization is <strong>token-based dynamic batching,</strong> instead of batching by number of requests, keeping GPU utilization at ~95%.</li>
+    <li><a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> is an open-source LLM inference engine from UC Berkeley. Its core innovation is <a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener"><strong>PagedAttention</strong></a>, which borrows virtual memory paging from operating systems to manage the KV cache. With <strong>continuous batching,</strong> GPU slots are freed immediately as sequences complete.</li>
   </ul>
-  <p>
-    In our codebase, inference servers run as sidecar containers alongside <a href="https://fastapi.tiangolo.com/" target="_blank" rel="noopener">FastAPI</a> applications, exposing OpenAI-compatible APIs.
-  </p>
 
   <h4>ElasticSearch</h4>
   <p>
-    <a href="https://www.elastic.co/elasticsearch" target="_blank" rel="noopener">Elasticsearch</a> stores and retrieves the embeddings. When a user submits a query, the query embedding is sent to Elasticsearch, which runs an approximate k-nearest neighbor (kNN) search using the <a href="https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/dense-vector" target="_blank" rel="noopener">HNSW algorithm</a>.
+    <a href="https://www.elastic.co/elasticsearch" target="_blank" rel="noopener">Elasticsearch</a> is a distributed search and analytics engine widely used as a vector database for semantic search. In our setup, it stores and retrieves the embeddings produced by the embedding model. When a user submits a query, the query embedding is sent to Elasticsearch, which runs an <a href="https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/dense-vector" target="_blank" rel="noopener"><strong>approximate k-nearest neighbor (kNN)</strong></a> search using the <a href="https://arxiv.org/pdf/1603.09320" target="_blank" rel="noopener">HNSW algorithm</a> to find the most similar vectors across the index. Results are ranked by cosine similarity and returned as candidate note chunks, which are then passed to the reranker.
+  </p>
+
+  <p><strong>Index structure</strong></p>
+  <p>
+    We have two dedicated Elasticsearch <strong>indices</strong> powering semantic search over user content:
+  </p>
+  <ul>
+    <li><strong><code>notes</code></strong> &mdash; stores note text, metadata (notebook, tags, author, creation date, etc.), and the vector embeddings of the note content. Combining metadata and embeddings in a single index is what makes pre-filtered kNN possible.</li>
+    <li><strong><code>ocr</code></strong> &mdash; stores note metadata and the vector embeddings of OCR-extracted text from note attachments (images, PDFs, etc.). Metadata is duplicated here so that attachment search can be filtered natively without a cross-index intersection.</li>
+  </ul>
+  <p>
+    The fact that we have a single index for deterministic and semantic search, and that we separate notes and OCR indices, is a deliberate architectural choice.
+  </p>
+
+  <p><strong>A single index for keyword and semantic search in notes</strong></p>
+  <p>
+    A unified index for keyword and semantic search enables natural filtering in semantic search, for cases like "Search notes about <em>dogs</em> in the notebook <code>Animals</code>". If you isolate the indices you can achieve filtered semantic search by running a vector search for "dogs" on the semantic index and a keyword/filter search on the metadata index for "notebook: Animals", then intersect the results. This approach has several complications, stemming from the fact that the two searches return a limited number of results, so the intersection may be incomplete.
   </p>
   <p>
-    We maintain two dedicated indices: <strong><code>notes</code></strong> for note text content and <strong><code>ocr</code></strong> for OCR-extracted text from attachments (images, PDFs). This isolation allows independent scaling and reindexing.
+    Consider a user with 1,000 notes tagged "videogames" who searches for "Peach" in notes with the tag "videogames". The pipeline fetches the top 100 semantically relevant notes and the top 100 notes with that tag, then intersects. If the one note about the Peach videogame character happens to be note #999 in the tag list, it never appears in either set of 100, so the intersection is empty, even though a perfect result exists. The same failure mode occurs in reverse: if 1,000 notes are semantically close to "Peach" but only one is tagged "videogames", the intersection can be empty. Over-fetching (grabbing 10&times; more results than needed) mitigates this, but doesn't solve it for large accounts.
   </p>
   <p>
-    Elasticsearch supports <a href="https://www.elastic.co/search-labs/blog/vector-search-filtering" target="_blank" rel="noopener"><strong>pre-filtered kNN</strong></a> — filters applied <em>during</em> HNSW graph traversal, not after. Filter conditions are compiled into a BitSet — a compact bitmap of matching documents. During traversal, candidate nodes that fail the filter are still explored (to preserve graph connectivity) but aren't counted toward the <em>k</em> results. This guarantees exactly <em>k</em> results that satisfy both semantic similarity and the deterministic constraints, unlike a post-filter which could reduce the result set below <em>k</em>. Every query is pre-filtered at minimum by user identity (also used as a shard routing key), with optional scoping by notebook, tag, or shared notes.
+    Elasticsearch's <strong>pre-filtered kNN</strong> eliminates this problem entirely. Filters are applied <em>during</em> HNSW graph traversal rather than after it. Candidate nodes that fail the filter are still explored (to preserve graph connectivity) but don't count toward the <em>k</em> results. This guarantees exactly <em>k</em> results satisfying both semantic relevance and the deterministic constraints, with no risk of an empty intersection. To use pre-filtered kNN, though, the metadata fields you want to filter on (notebook, tag, user identity, etc.) must live <em>in the same index</em> as the embeddings.
+  </p>
+
+  <p><strong>A separate index for attachments</strong></p>
+  <p>
+    In Evernote, we let users search within PDFs, images, and other files attached to their notes by indexing the textual content extracted via OCR. Once we decided to unify notes and their embeddings, the natural next question was whether to include attachment embeddings in the same index, too.
+  </p>
+  <p>
+    In Elasticsearch, each field can be stored in two ways: <em>searchable only</em> (the field's contents are transformed into an optimized internal format for search), or <em>searchable and retrievable</em> (the original content is also stored verbatim in a special <code>_source</code> field). If a document's fields are not fully present in <code>_source</code>, it cannot be updated without deleting and re-creating the entire document.
+  </p>
+  <p>
+    To keep storage costs under control, we don't store all fields in <code>_source</code>. This creates a problem if note text embeddings and OCR embeddings coexist in the same index: every time a user edits a note, even if the attachments haven't changed, we would need to recompute and re-store the OCR embeddings to recreate the document, which is very costly at our scale.
+  </p>
+  <p>
+    With a dedicated <code>ocr</code> index, the two entities naturally have different update lifecycles: note content changes frequently; attachment OCR rarely does. Metadata is stored in this index as well so that attachment search can be filtered by notebooks, tags or created date.
   </p>
 
   <!-- § 3.2 — LOAD BALANCER TUNING -->
-  <h3 id="scaling">Load balancer and autoscaler tuning</h3>
+  <h3 id="scaling">Load balancer and autoscaler finetuning</h3>
   <p>
-    Before deploying to production, the pipeline needed to be tested at scale. A naive deployment strategy doesn't work at high request rates: requests get queued and cancelled on timeout.
+    Before deploying the pipeline to production, it needs to be tested and optimized at scale. A naive deployment strategy doesn't work at high request rates: requests get queued and canceled due to timeouts. By running the first test in which 1M of notes were sent to the embedding deployment, we noticed that the autoscaler was not able to react to high load of requests.
   </p>
 
   <div class="before-after" style="grid-template-columns: 1fr;">
     <div class="panel">
       <div class="panel-label bad">Before tuning</div>
-      <img src="images/error-rate-before.png" alt="Dashboard showing ~100% error rate and latencies over 1 minute before tuning">
+      <img src="images/error-rate-before.png" alt="The error rate at first was almost 100% as the autoscaler was not spawning machines fast enough. Moreover, the latencies were consistently over 1 minute, causing timeouts.">
     </div>
     <div class="panel">
       <div class="panel-label good">After tuning</div>
-      <img src="images/error-rate-after.png" alt="Dashboard showing flat error rate and low latency after tuning">
+      <img src="images/error-rate-after.png" alt="After tuning the load balancer and the autoscaler, the deployment is able to handle millions of embedding requests in an hour with low latency and minimal failure.">
     </div>
   </div>
 
   <p>
-    We ran a series of indexing experiments processing 1.5M notes per run, tweaking two key parameters:
+    We ran a collection of indexing experiments with the embedding pipeline with the goal of optimizing error rates, latency and throughput. We processed 1.5M notes in each run. Each experiment has a slightly different configuration with respect to the previous run, to spot which deployment parameters are relevant to the metrics. The key knobs to tweak are:
   </p>
   <ul>
-    <li><strong>Parallel requests per GPU worker.</strong> Too few means unsaturated GPU memory and suboptimal throughput. Too many overwhelms workers, increasing latency and causing request loss.</li>
-    <li><strong>Autoscaler reactivity.</strong> Our autoscaler takes a maximum request latency parameter that controls how aggressively it scales.</li>
+    <li><strong>The number of requests to send in parallel to a GPU worker.</strong> If this is too little, the GPU memory is not saturated, and the throughput is suboptimal. If is too large, workers are overwhelmed by requests, increasing latency and causing requests loss.</li>
+    <li><strong>The autoscaler reactivity.</strong> Our autoscaler takes as input a parameter which represents the time in which it will expect to handle every request, i.e. the maximum request latency.</li>
   </ul>
   <p>
-    We found that sending <strong>180 note chunks in parallel</strong> is a good working point, and that the autoscaler tuning should be aggressive (max latency of 100s). This achieved a flat error rate and low latency across millions of requests per hour.
+    We concluded that sending <strong>5400 note chunks in parallel</strong> is a good working point, and that the autoscaler tuning should be aggressive (max latency of 100s). This allowed us to obtain an error rate close to 0%.
   </p>
 
   <div class="callout green">
-    At peak, we hit a rate of <strong>~5,700 notes processed per second</strong>, running 300 GPU machines on the embedding deployment, with 1.8 TB of vectors stored in ElasticSearch. Something that worked well for us was sending note content as links to cloud storage instead of serializing it into the request body. Surprisingly, the bottleneck for processing speed was the request rate to the note database — not AI processing — meaning our autoscaler kept up well.
+    At this point we could start embedding user notes. We hit a rate of <strong>~5,700 notes processed per second</strong>, 300 GPU machines in our deployment running the embedding model, and 1.8 TB of documents stored in the Elasticsearch vector database. Surprisingly, the bottleneck for our processing speed was the request rate to the note database to retrieve the content, and not the one for AI processing, which means that our autoscaler was powerful enough.
   </div>
 
   <!-- § 3.3 — EMBEDDING ALL NOTES -->
   <h3 id="embedding-all">Embedding all notes</h3>
   <p>
-    Turning 3 billion notes into vectors was the longest and most stressful part of the project. During processing — which lasted days — anything could go wrong. We kept careful watch on dashboards, pausing processing at any suspicious metric change.
+    The process of turning 3 billion notes into vectors was the longest and most stressful part of the project. The reason is that during the period of processing, which lasts days, anything can go wrong. With eyes carefully looking at the dashboards we tried to spot any suspicious change in the metrics, pausing the processing in that case.
   </p>
   <p>
-    We hit issues with the ENML-to-Markdown conversion crashing on highly structured notes that were heavy to parse. A queue of dead notes was re-injected daily to retry failures. After days of attempts, processing completed and live indexing began — updating embeddings every time a note was edited.
+    We also had issues with the ENML-to-Markdown conversion, which was crashing for highly structured ENML notes which were heavy to parse. A queue of dead notes was re-injected daily to retry fails. After days of attempts, we managed to complete the processing and live indexing started to run for notes every time they were edited by the users to update the embeddings.
   </p>
 
   <div class="section-divider"></div>
 
   <!-- § 4 — AI INTEGRATIONS -->
   <h2 id="integrations">AI Integrations</h2>
+  <p>
+    With the pipeline deployed and all notes embedded, the infrastructure work was done, and users could start searching their notes with fuzzy words. However, semantic search unlocks even more value when integrated with AI systems. In this section we walk through two integrations: Quick Answer, which surfaces AI-generated responses directly in the search bar, and the AI Assistant, which uses semantic search as a tool inside a conversational agent.
+  </p>
 
   <h3 id="quick-answer">Quick Answer</h3>
 
@@ -1412,13 +1438,13 @@ print('hi')
     <li><em>"Summarize my notes tagged meeting from April 2024"</em></li>
   </ul>
   <p>
-    Not every query needs a generated answer — sometimes users just want notes. A lightweight <strong>intent detection</strong> step, powered by <strong><a href="https://huggingface.co/microsoft/phi-4" target="_blank" rel="noopener">phi-4</a></strong> via vLLM, runs <strong>in parallel</strong> with document retrieval to decide whether to return note results or generate an AI answer. This adds no extra latency to the search path.
+    Not every query needs a generated answer — sometimes users just want notes. A lightweight <strong>intent detection</strong> step, powered by <strong>RedHatAI/Qwen3-14B-quantized.w4a16</strong> via vLLM, runs <strong>in parallel</strong> with document retrieval to decide whether to return note results or generate an AI answer. This adds no extra latency to the search path.
   </p>
   <p>
-    To support filters by time or entity, a separate <strong>constraint extraction</strong> call (also phi-4) parses natural-language constraints — like "in notebook Swe-Team" or "from April 2024" — into Evernote's structured query language. These deterministic filters are then passed to ElasticSearch's pre-filtered kNN (described in the <a href="#infra">Infrastructure</a> section), combining semantic similarity with exact constraints in a single query.
+    To support time- or entity-based filtering, a separate <strong>constraint-extraction</strong> call parses natural-language constraints &mdash; such as "in notebook Swe-Team" or "from April 2024" &mdash; into Evernote's structured query language. These deterministic filters are then passed to ElasticSearch's pre-filtered kNN (described in <a href="#infra">Section 3.1</a>), combining semantic similarity with exact constraints in a single query.
   </p>
   <p>
-    When a generated answer is needed, we feed both the question and the retrieved chunks into <strong>phi-4</strong>, producing a concise, contextual response grounded in the user's own notes.
+    When a generated answer is needed, we feed both the question and the retrieved chunks into <strong>Qwen3 14B</strong>, producing a concise, contextual response grounded in the user's own notes.
   </p>
 
   <h3 id="ai-assistant">AI Assistant</h3>
@@ -1428,32 +1454,39 @@ print('hi')
   </div>
 
   <p>
-    Semantic search becomes extremely powerful when plugged into agents as a tool. Evernote's <a href="https://help.evernote.com/hc/en-us/articles/46319409880211-AI-Assistant" target="_blank" rel="noopener">AI Assistant</a> uses semantic search as its primary mechanism for helping users find and interact with their notes. When the user sends a message, the agent determines if a search is needed, formulates the query, and presents results appropriately — or uses them to produce analyses, reports, or trigger actions like moving notes across notebooks.
+    Semantic search is extremely powerful when plugged into agents as a tool. Evernote's <a href="https://help.evernote.com/hc/en-us/articles/46319409880211-AI-Assistant" target="_blank" rel="noopener">AI Assistant</a> uses semantic search as its primary mechanism for helping users find and interact with their notes. When the user sends a message, the agent determines if a search is needed, formulates the query, and presents results in a way appropriate to the user's intent, or uses the results to produce analyses, reports, or to trigger actions like moving notes across notebooks. Here is an example of a very useful use case:
   </p>
+
+  <div class="code-compare" style="grid-template-columns: 1fr;">
+    <div class="code-panel">
+      <pre><code>Can you analyze my recent work on Evernote Semantic Search and recap the progress state?</code></pre>
+    </div>
+  </div>
 
   <div class="section-divider"></div>
 
   <!-- § 5 — CONCLUSION -->
   <h2 id="conclusion">Conclusion</h2>
   <p>
-    Integrating semantic search created real product value by powering the retrieval experience. Thanks to vector matching, users can find notes with much less effort. Integrations with LLMs allow extracting note details surgically or analyzing notes in bulk. The feature was generally well appreciated by our users, who found the retrieval intuitive and quite accurate.
+    Integrating semantic search into Evernote required solving problems across the full stack: converting a proprietary note format, selecting and hosting embedding and reranking models at scale, designing an index structure that supports filtered vector search, and embedding billions of notes without disrupting live traffic.
   </p>
 
-  <p>The main factors that contributed to the project's success:</p>
+  <p>The main factors that contributed to the success of the project are:</p>
   <ul>
     <li>The awareness that a concrete product limitation could be solved with a widely adopted technology</li>
-    <li>Extensive use of <strong>open-source models</strong> to save costs from external providers and retain control over sensitive data</li>
-    <li>Efficient hosting with <strong>inference servers</strong> (TEI, vLLM) compared to standard implementations</li>
+    <li>The extensive use of <strong>open-source models</strong> to save costs from external providers and retain control over sensitive data</li>
+    <li>The efficient hosting of models with <strong>inference servers</strong> (TEI, vLLM) compared to standard implementations</li>
   </ul>
 
+  <p>At the same time, there are some limitations or downsides that we are still working on:</p>
+
   <div class="callout blue">
-    <strong>Trade-offs worth noting:</strong><br><br>
     <strong>Speed.</strong> Semantic search is slower than keyword search, which runs on-device and is effectively instant. To avoid degrading the experience, we show keyword results immediately and load semantic results separately. Users may not always understand why two sets of results appear or why the semantic ones take longer.<br><br>
-    <strong>Cost.</strong> Despite all the effort to run embeddings efficiently and limit storage overhead, this feature is expensive. We had hundreds of A100 GPUs running during the initial indexing phase, and some are still needed to keep the feature alive.
+    <strong>Cost.</strong> Despite all the effort to run embeddings efficiently and limit the storage overhead, this feature is expensive. We had hundreds of A100 GPUs running during the first indexing phase, and some are still needed to keep the feature alive.
   </div>
 
   <p>
-    Thanks to both the successful and problematic aspects, this was one of the most interesting projects we've ever worked on. Involving product shaping, model research, and engineering at scale, it's been a great team effort on a hard but extremely rewarding challenge.
+    Overall, the project covered an unusually broad surface area, from model research to infrastructure engineering to product integration, and the retrieval layer it produced now powers the AI features we are building on top of Evernote.
   </p>
 
   <div class="section-divider"></div>
@@ -1471,13 +1504,13 @@ print('hi')
     <div class="toc-label">On this page</div>
     <a href="#intro">A new kind of search</a>
     <a href="#pipeline">The pipeline</a>
-    <a href="#markdown-conversion">Markdown conversion</a>
+    <a href="#markdown-conversion">Markdown Conversion</a>
     <a href="#model-selection">Model selection</a>
     <a href="#chunk-size">Chunk size</a>
     <a href="#reranker">Reranker</a>
     <a href="#deployment">Deployment</a>
     <a href="#infra">Infrastructure</a>
-    <a href="#scaling">Scaling</a>
+    <a href="#scaling">Autoscaler finetuning</a>
     <a href="#embedding-all">Embedding all notes</a>
     <a href="#integrations">AI Integrations</a>
     <a href="#quick-answer">Quick Answer</a>
