@@ -1646,8 +1646,8 @@ print('hi')
   <p>At the same time, there are some limitations or downsides that we are still working on:</p>
 
   <div class="callout blue">
-    <strong>Speed.</strong> Semantic search is slower than keyword search, which runs on-device and is effectively instant. To avoid degrading the experience, we show keyword results immediately and load semantic results separately. Users may not always understand why two sets of results appear or why the semantic ones take longer.<br><br>
-    <strong>Cost.</strong> Despite all the effort to run embeddings efficiently and limit the storage overhead, this feature is expensive. We had hundreds of A100 GPUs running during the first indexing phase, and some are still needed to keep the feature alive.
+    <strong>Speed.</strong> Semantic search is slower than keyword search, which runs on-device and is effectively instant. To avoid degrading the experience, we show keyword results immediately and load semantic results separately. Users may not always understand why two sets of results appear or why the semantic ones take longer. We are evaluating an upgrade to Elasticsearch 8.19, which introduces the <a href="https://arxiv.org/abs/2403.04871" target="_blank" rel="noopener">ACORN-1</a> algorithm for filter-aware HNSW traversal &mdash; early benchmarks suggest up to 5&times; faster filtered vector search with minimal recall loss.<br><br>
+    <strong>Cost.</strong> Despite all the effort to run embeddings efficiently and limit the storage overhead, this feature is expensive. We had hundreds of A100 GPUs running during the initial indexing phase. Since then, autoscaler improvements have brought the steady-state fleet down to around 30 A100 machines, and we are exploring a move to more cost-effective GPU instances to reduce costs further.
   </div>
 
   <p>
