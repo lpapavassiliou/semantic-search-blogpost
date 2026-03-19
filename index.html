@@ -1080,7 +1080,7 @@
   <ul>
     <li><strong>Embedding a note.</strong> When a note is saved, it gets split into smaller chunks. Each chunk is then run through the embedding model, resulting in vectors that get stored and indexed.</li>
     <li><strong>Searching for a query.</strong> When a user types a search query, it gets converted into an embedding. We then look for the stored vectors that are closest to the query vector in terms of cosine similarity. Cosine similarity determines which notes are most relevant to the query and, more precisely, what note snippet matched.</li>
-    <li><strong>Reranking results.</strong> To improve accuracy, we add a reranking pass: a second model takes the query and each retrieved chunk together and scores their relevance as a pair. This cross-encoder architecture allows direct attention between the query and the content at the tokens-level, producing more accurate relevance scores than the comparison of embeddings.</li>
+    <li><strong>Reranking results.</strong> To improve accuracy, we add a reranking pass: a second model takes the query and each retrieved chunk together and scores their relevance as a pair. This cross-encoder architecture allows direct attention between the query and the content at the token level, producing more accurate relevance scores than comparing embeddings.</li>
   </ul>
 
   <p>
@@ -1095,10 +1095,10 @@
   <ul>
     <li><strong>Token inefficiency.</strong> XML formats use many separators and metadata that inflate token count without bringing semantic value. Compared to Markdown, XML would result in more embeddings to compute, store, and search, increasing embedding costs at scale, assuming that the chunk size stays fixed.</li>
     <li><strong>Chunking is problematic.</strong> When XML files are chunked, the syntax can easily break. A chunk might start in the middle of a tag, leaving the model with incomplete information about the relationship between the nodes.</li>
-    <li><strong>Models might not be familiar with ENML.</strong> Most models are trained extensively in Markdown. Instead, the models' attention might be less effective on custom nodes to store tasks or calendar blocks.</li>
+    <li><strong>Models might not be familiar with ENML.</strong> Most models are trained extensively in Markdown. Instead, the models' attention might be less effective on custom nodes used to represent tasks or calendar blocks.</li>
   </ul>
   <p>
-    We developed a conversion logic in house for each ENML node, stripping formatting details such as text color, simplifying the document's structure, and preparing the text for downstream models. On real user notes, we have estimated that the Markdown version of the note is about <strong>0.37 times</strong> the size of the note in ENML.
+    We developed the conversion logic in-house for each ENML node, stripping formatting details such as text color, simplifying the document's structure, and preparing the text for downstream models. On real user notes, we have estimated that the Markdown version of the note is about <strong>0.37 times</strong> the size of the note in ENML.
   </p>
 
   <div class="code-compare">
@@ -1144,7 +1144,7 @@ print('hi')
     We used the <a href="https://huggingface.co/spaces/mteb/leaderboard" target="_blank" rel="noopener">MTEB leaderboard</a> to select our candidates, and we defined a custom evaluation framework for the final selection. MTEB is a public benchmark that evaluates embedding models with various datasets and retrieval task types. Given that our use case in Evernote is also quite broad, we considered the MTEB score a reliable prior for models' accuracy. At the time of testing, these were considered among the best lightweight models: <a href="https://huggingface.co/Alibaba-NLP/gte-Qwen2-1.5B-instruct" target="_blank" rel="noopener">Qwen2 1.5B Instruct</a>, <a href="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF" target="_blank" rel="noopener">Qwen3 Embedding 0.6B</a>, GTE Multilingual Base 0.4B, E5 Multilingual Large Instruct, and <a href="https://huggingface.co/Qwen/Qwen3-Embedding-8B" target="_blank" rel="noopener">Qwen3 Embedding 8B</a>.
   </p>
   <p>
-    Some of them proved to be inferior in early tests and were discarded. To select the winner, we implemented a custom evaluation framework within a synthetic Evernote account containing <strong>481 realistic notes</strong> and <strong>38 hard queries</strong>. The task was to embed the query and the notes so that the note containing the information about the query's topic would score the highest as possible in the ranking. Queries were designed by hand to have little or no word overlap with the corresponding note, and sometimes not even match the language. Notes were truncated when too long, but other than that, no chunking was done.
+    Some of them proved to be inferior in early tests and were discarded. To select the winner, we implemented a custom evaluation framework within a synthetic Evernote account containing <strong>481 realistic notes</strong> and <strong>38 hard queries</strong>. The task was to embed the query and the notes so that the note containing the information about the query's topic would score as high as possible in the ranking. Queries were designed by hand to have little or no word overlap with the corresponding note, and sometimes to not even match the language. Notes were truncated when too long, but other than that, no chunking was done.
   </p>
 
   <div class="eval-card">
@@ -1401,7 +1401,7 @@ print('hi')
     Our embedding workers run on an internal platform that adjusts the number of machines based on demand. Getting the autoscaling policy right proved to be one of the most impactful optimizations across the entire pipeline.
   </p>
   <p>
-    A common autoscaling strategy is to estimate each machine's throughput capacity (messages per second) and provision enough machines to match the incoming rate. This approach can fail for inference servers if their ability to process requests in parallel is not accounted for in the capacity estimation. An autoscaler could see that the machine is always processing something and concludes it is at full capacity, even if the GPU could handle 10x more concurrent work. In our case, each note took roughly 300ms to process, so receiving just 4&ndash;5 messages per second was enough for the autoscaler to consider the machine saturated, while an A100 GPU can handle ~250 messages/second incoming at ~40% GPU utilization.
+    A common autoscaling strategy is to estimate each machine's throughput capacity (messages per second) and provision enough machines to match the incoming rate. This approach can fail for inference servers if their ability to process requests in parallel is not accounted for in the capacity estimation. An autoscaler could see that the machine is always processing something and conclude it is at full capacity, even if the GPU could handle 10x more concurrent work. In our case, each note took roughly 300ms to process, so receiving just 4&ndash;5 messages per second was enough for the autoscaler to consider the machine saturated, while an A100 GPU can handle ~250 messages/second incoming at ~40% GPU utilization.
   </p>
   <p>
     We also added stabilization controls: averaging the metric over a 10-minute window and enforcing cooldown periods between scaling events to avoid oscillation, since GPU machines take several minutes to boot. Scale-down is gradual; scale-up is unrestricted.
@@ -1464,7 +1464,7 @@ print('hi')
   <!-- § 3.2 — LOAD BALANCER TUNING -->
   <h3 id="scaling">Load balancer and autoscaler finetuning</h3>
   <p>
-    Before deploying the pipeline to production, it needs to be tested and optimized at scale. A naive deployment strategy doesn't work at high request rates: requests get queued and canceled due to timeouts. By running the first test in which 1M of notes were sent to the embedding deployment, we noticed that the autoscaler was not able to react to high load of requests.
+    Before deploying the pipeline to production, it needs to be tested and optimized at scale. A naive deployment strategy doesn't work at high request rates: requests get queued and canceled due to timeouts. By running the first test in which 1M notes were sent to the embedding deployment, we noticed that the autoscaler was not able to react to high load of requests.
   </p>
 
   <div class="before-after" style="grid-template-columns: 1fr;">
@@ -1481,11 +1481,11 @@ print('hi')
   </div>
 
   <p>
-    We ran a collection of indexing experiments with the embedding pipeline with the goal of optimizing error rates, latency and throughput. We processed 1.5M notes in each run. Each experiment has a slightly different configuration with respect to the previous run, to spot which deployment parameters are relevant to the metrics. The key knobs to tweak are:
+    We ran a series of indexing experiments on the embedding pipeline to optimize error rates, latency, and throughput. We processed 1.5M notes in each run. Each experiment has a slightly different configuration with respect to the previous run, to spot which deployment parameters are relevant to the metrics. The key knobs to tweak are:
   </p>
   <ul>
-    <li><strong>The number of requests to send in parallel to a GPU worker.</strong> If this is too little, the GPU memory is not saturated, and the throughput is suboptimal. If is too large, workers are overwhelmed by requests, increasing latency and causing requests loss.</li>
-    <li><strong>The autoscaler reactivity.</strong> Our autoscaler takes as input a parameter which represents the time in which it will expect to handle every request, i.e. the maximum request latency.</li>
+    <li><strong>The number of requests to send in parallel to a GPU worker.</strong> If this is too low, the GPU memory is not saturated, and the throughput is suboptimal. If it is too large, workers are overwhelmed by requests, increasing latency and causing request loss.</li>
+    <li><strong>Autoscaler reactivity.</strong> Our autoscaler takes as input a parameter that represents the maximum time allowed to handle a request, i.e. the target maximum request latency.</li>
   </ul>
   <p>
     We concluded that sending a maximum of <strong>5400 chunks in parallel to a single GPU</strong> is a good working point, and that the autoscaler tuning should be aggressive (max latency of 100s). This allowed us to obtain an error rate close to 0%.
@@ -1498,7 +1498,7 @@ print('hi')
   <!-- § 3.3 — EMBEDDING ALL NOTES -->
   <h3 id="embedding-all">Embedding all notes</h3>
   <p>
-    The process of turning notes into vectors was the longest and most stressful part of the project. Evernote holds 9 billion notes in total, but we only maintain a semantic index for users active in the last 60 days — about 3 billion notes. This cutoff is a tradeoff between storage cost and readiness for returning users: if a dormant user comes back, our pipeline can reindex their account in a few minutes. The reason is that during the period of processing, which lasts days, anything can go wrong. Throughout the process, we monitored dashboards closely and paused processing at the first sign of anything unusual.
+    The process of turning notes into vectors was the longest and most stressful part of the project. Processing lasts days, and during that time anything can go wrong. Throughout the process, we monitored dashboards closely and paused processing at the first sign of anything unusual. Evernote holds 9 billion notes in total, but we only maintain a semantic index for users active in the last 60 days — about 3 billion notes. This cutoff is a tradeoff between storage cost and readiness for returning users: if a dormant user comes back, our pipeline can reindex their account in a few minutes.
   </p>
   <p>
     The ENML-to-Markdown conversion also caused problems: certain heavily structured notes consumed so much memory during parsing that they crashed the converter pods. A single problematic note could cascade into thousands of failed messages in the dead-letter queue. We downloaded the offending notes locally to reproduce and fix each crash — from malformed nested lists to deeply recursive formatting tags. After iterating through these fixes until no problematic notes remained, we completed the backfill and transitioned to live indexing, updating embeddings whenever a note is edited.
@@ -1539,7 +1539,7 @@ print('hi')
   <h3 id="ai-assistant">AI Assistant</h3>
 
   <div class="product-shot">
-    <img src="images/ai-assistant.png" alt="Evernote AI Assistant analyzing notes about semantic search progress" style="width: 60%; border-radius: 12px;">
+    <img src="images/ai-assistant.png" alt="Evernote AI Assistant analyzing notes about semantic search progress" style="width: 50%; border-radius: 12px;">
   </div>
 
   <p>
