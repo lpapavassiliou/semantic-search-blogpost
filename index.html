@@ -1416,11 +1416,11 @@ print('hi')
     </div>
   </div>
   <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
-    The reranker rescores and reorders results, pushing irrelevant or empty notes below the threshold. Only notes above the cutoff are returned to the user.
+    The reranker rescores and reorders results, pushing irrelevant or empty notes below the threshold. Only notes above the cutoff are returned to the user. In practice, our relevance threshold is even lower than 0.1 because false positives are very rare.
   </p>
 
   <p>
-    As a reranker model, we selected <strong><a href="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B" target="_blank" rel="noopener">Qwen3-Reranker-0.6B</a></strong>. This model is lightweight and can be run very efficiently with <a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> as an inference server. This improved precision significantly.
+    As a reranker model, we selected <strong><a href="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B" target="_blank" rel="noopener">Qwen3-Reranker-0.6B</a></strong>, which improved precision significantly. This model is lightweight and can be run very efficiently with <a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> as an inference server. We use a different inference framework than the embedding model because each server supports a different set of models, so the choice of model dictates the choice of server.
   </p>
 
   <div class="section-divider"></div>
@@ -1475,15 +1475,15 @@ print('hi')
     We also added stabilization controls: averaging the metric over a 10-minute window and enforcing cooldown periods between scaling events to avoid oscillation, since GPU machines take several minutes to boot. Scale-down is gradual; scale-up is unrestricted.
   </p>
 
-  <h4>Inference servers</h4>
+  <h4 id="inference-servers">Inference servers</h4>
   <p>
     To serve these models in production, we used dedicated inference servers rather than loading them directly with PyTorch. Inference servers are optimized runtimes that sit between the application and the model: they accept requests over HTTP, batch them dynamically, and run inference on the GPU with optimizations such as continuous batching and KV caching. Since both embedding and reranking models are transformer-based, they benefit from these optimizations, achieving significantly higher throughput than a naive PyTorch forward pass.
   </p>
   <p>
-    We used two popular implementations for inference servers:
+    We used two popular implementations for inference servers. Each inference server decides which models to support, and not all models are available on all servers. For this reason, we use the server that supports the model we want: TEI for the embedding model and vLLM for the reranker.
   </p>
   <ul>
-    <li><a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text-Embedding-Inference</a> is Hugging Face's purpose-built server for embedding and reranking models. Its key optimization is <strong>token-based dynamic batching,</strong> instead of batching by number of requests, keeping GPU utilization at ~95%.</li>
+    <li><a href="https://github.com/huggingface/text-embeddings-inference" target="_blank" rel="noopener">Text-Embedding-Inference</a> (TEI) is Hugging Face's purpose-built server for embedding and reranking models. Its key optimization is <strong>token-based dynamic batching,</strong> instead of batching by number of requests, keeping GPU utilization at ~95%.</li>
     <li><a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">vLLM</a> is an open-source LLM inference engine from UC Berkeley. Its core innovation is <a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener"><strong>PagedAttention</strong></a>, which borrows virtual memory paging from operating systems to manage the KV cache. With <strong>continuous batching,</strong> GPU slots are freed immediately as sequences complete.</li>
   </ul>
 
@@ -1595,13 +1595,16 @@ print('hi')
     <li><em>"Summarize my notes tagged meeting from April 2024"</em></li>
   </ul>
   <p>
-    Not every query needs a generated answer — sometimes users just want notes. A lightweight <strong>intent detection</strong> step, powered by <strong>RedHatAI/Qwen3-14B-quantized.w4a16</strong> via vLLM, runs <strong>in parallel</strong> with document retrieval to decide whether to return note results or generate an AI answer. This adds no extra latency to the search path.
+    All the LLM-powered steps in Quick Answer — intent detection, constraint extraction, and answer generation — are served by a single deployment of <strong>RedHatAI/Qwen3-14B-quantized.w4a16</strong> on vLLM.
+  </p>
+  <p>
+    Not every query needs a generated answer — sometimes users just want notes. A lightweight <strong>intent detection</strong> step runs <strong>in parallel</strong> with document retrieval to decide whether to return note results or generate an AI answer. This adds no extra latency to the search path.
   </p>
   <p>
     To support time- or entity-based filtering, a separate <strong>constraint-extraction</strong> call parses natural-language constraints &mdash; such as "in notebook Swe-Team" or "from April 2024" &mdash; into Evernote's structured query language. These deterministic filters are then passed to ElasticSearch's pre-filtered kNN (described in <a href="#infra">Section 3.1</a>), combining semantic similarity with exact constraints in a single query.
   </p>
   <p>
-    When a generated answer is needed, we feed both the question and the retrieved chunks into <strong>Qwen3 14B</strong>, producing a concise, contextual response grounded in the user's own notes.
+    When a generated answer is needed, we feed both the question and the retrieved chunks into the same model, producing a concise, contextual response grounded in the user's own notes.
   </p>
 
   <h3 id="ai-assistant">AI Assistant</h3>
