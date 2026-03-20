@@ -1099,10 +1099,6 @@
   <section class="stats">
     <div class="stats-grid">
       <div class="stat">
-        <div class="stat-value blue">3B</div>
-        <div class="stat-label">Notes processed</div>
-      </div>
-      <div class="stat">
         <div class="stat-value green">5.7K</div>
         <div class="stat-label">Notes/sec throughput</div>
       </div>
@@ -1286,7 +1282,7 @@ print('hi')
   <!-- § 2.3 — CHUNK SIZE -->
   <h3 id="chunk-size">Chunk size</h3>
   <p>
-    Large notes aren't fed to the model all at once. There are notes with over 100K characters, and compressing all that information into a single vector would be lossy. Instead, notes are split into chunks, which are embedded individually. Though there are several strategies for chunking that aim at preserving paragraphs, sentences, or token size, we went for the simplest strategy, with a fixed length of characters and an overlap. We experimented with tokenization, but it was too CPU demanding compared to the alternative, and we did not observe significant quality gains that would justify its adoption. In our experience, the chunk size does not affect retrieval accuracy much: we tested several chunk sizes in our test notes and noticed little change in performance.
+    Large notes aren't fed to the model all at once. There are notes with over 100K characters, and compressing all that information into a single vector would be lossy. Instead, notes are split into chunks, which are embedded individually. Though there are several strategies for chunking that aim at preserving paragraphs, sentences, or token size, we went for the simplest strategy, with a fixed length of characters and an overlap. We experimented with tokenization, but it was too CPU demanding compared to the alternative, and we did not observe significant quality gains that would justify its adoption. In our experience, the chunk size does not affect retrieval accuracy much: we tested several chunk sizes in our evaluation set of notes and noticed little change in performance.
   </p>
 
   <div class="chart-container">
@@ -1367,7 +1363,7 @@ print('hi')
     </div>
   </div>
   <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -0.5rem;">
-    Retrieval performance from our embedding model Qwen2 1.5B Instruct varying chunk size. The change is limited, but a chunk size of around 2500 characters looks solid.
+    Retrieval performance from our embedding model Qwen2 1.5B Instruct varying chunk size.
   </p>
 
   <p>
@@ -1570,7 +1566,7 @@ print('hi')
   <!-- § 3.3 — EMBEDDING ALL NOTES -->
   <h3 id="embedding-all">Embedding all notes</h3>
   <p>
-    The process of turning notes into vectors was the longest and most stressful part of the project. Processing lasts days, and during that time anything can go wrong. Throughout the process, we monitored dashboards closely and paused processing at the first sign of anything unusual. Evernote holds 9 billion notes in total, but we only maintain a semantic index for users active in the last 60 days — about 3 billion notes. This cutoff is a tradeoff between storage cost and readiness for returning users: if a dormant user comes back, our pipeline can reindex their account in a few minutes.
+    The process of turning notes into vectors was the longest and most stressful part of the project. Processing can take several days, and during that time anything can go wrong. Throughout the process, we monitored dashboards closely and paused processing at the first sign of anything unusual. Evernote holds 9 billion notes in total, but we only maintain a semantic index for users active in the last 60 days — about 3 billion notes. This cutoff is a tradeoff between storage cost and readiness for returning users: if a dormant user comes back, our pipeline can reindex their account in a few minutes.
   </p>
   <p>
     The ENML-to-Markdown conversion also caused problems: certain heavily structured notes consumed so much memory during parsing that they crashed the converter pods. A single problematic note could cascade into thousands of failed messages in the dead-letter queue. We tested the conversion logic against highly formatted and structurally complex notes to reproduce and fix each crash — from malformed nested lists to deeply recursive formatting tags. After iterating through these fixes until no problematic notes remained, we completed the backfill and transitioned to live indexing, updating embeddings whenever a note is edited.
@@ -1581,7 +1577,7 @@ print('hi')
   <!-- § 4 — AI INTEGRATIONS -->
   <h2 id="integrations">AI Integrations</h2>
   <p>
-    With the pipeline deployed and all notes embedded, the infrastructure work was done, and users could start searching their notes with fuzzy words. But search is just the surface — semantic search unlocks even more value when integrated with AI systems. In this section we walk through two integrations: Quick Answer, which surfaces AI-generated responses directly in the search bar, and the AI Assistant, which uses semantic search as a tool inside a conversational agent.
+    With the pipeline deployed and all notes embedded, the infrastructure work was done, and users could start searching their notes using natural language. But search is just the surface — semantic search unlocks even more value when integrated with AI systems. In this section we walk through two integrations: Quick Answer, which surfaces AI-generated responses directly in the search bar, and the AI Assistant, which uses semantic search as a tool inside a conversational agent.
   </p>
 
   <h3 id="quick-answer">Quick Answer</h3>
