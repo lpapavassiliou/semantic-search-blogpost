@@ -1123,7 +1123,7 @@
   </p>
 
   <p>
-    Semantic search came with real challenges. Evernote holds <strong>9 billion notes</strong>, making the cost of processing and embedding content significant both in compute and storage. Notes also span a huge range of formats: plain text, bullet lists, reminders, calendar events, audio, and more. Supporting all of these, across multiple languages and topics, makes quality hard to measure and guarantee. Privacy added another hard constraint. Many users store sensitive information in Evernote, such as phone numbers, work documents, and personal records. While we work with trusted third-party partners in other contexts, we wanted users to feel completely confident that their notes never leave our infrastructure, so we built the entire semantic search pipeline in-house.
+    Semantic search came with real challenges. Evernote holds <strong>9 billion notes</strong>, making the cost of processing and embedding content significant both in compute and storage. Notes also span a huge range of formats: plain text, bullet lists, reminders, calendar events, audio, and more. Supporting all of these, across multiple languages and topics, makes quality hard to measure and guarantee. Privacy added another hard constraint. Many users store sensitive information in Evernote, such as phone numbers, work documents, and personal records. Using a hosted API would mean sending user content externally and losing control over cost and latency at scale, so we built the entire semantic search pipeline on open-source models running within our own infrastructure.
   </p>
 
   <p>
@@ -1456,7 +1456,7 @@ print('hi')
 
   <h4>Proprietary AI infrastructure</h4>
   <p>
-    At Bending Spoons, we maintain a proprietary GPU inference platform, internally known as Pantheon, built for scalability and cost-efficient serving at high request volumes. Pantheon is designed for throughput-oriented workloads, meaning scenarios with a large number of requests where strict real-time latency constraints do not apply. This use case is a natural fit: we don't need ultra-low latency because a user rarely needs to retrieve a note they have just written, so messages can wait in the queue for tens of seconds without impacting user experience.
+    We maintain a proprietary GPU inference platform, internally known as Pantheon, built for scalability and cost-efficient serving at high request volumes. Pantheon is designed for throughput-oriented workloads, meaning scenarios with a large number of requests where strict real-time latency constraints do not apply. This use case is a natural fit: we don't need ultra-low latency because a user rarely needs to retrieve a note they have just written, so messages can wait in the queue for tens of seconds without impacting user experience.
   </p>
 
   <p><strong>Architecture</strong></p>
