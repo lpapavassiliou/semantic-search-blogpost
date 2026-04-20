@@ -1209,7 +1209,7 @@ print('hi')
   </p>
   <ul>
     <li><strong>Accurate for our use case:</strong> The ideal embedding model should allow for sensible similarity scores, i.e., relevant notes should have higher scores than the others. We specifically care about how the model performs on real note content — often messy, fragmented, and informal, but sometimes highly structured — rather than plain, fluent text.</li>
-    <li><strong>Low cost and latency:</strong> The model's throughput is essential for quick and cheap processing of the documents. Given that we have billions of notes to process, a difference in model size or inference efficiency can significantly impact costs and the total machine time.</li>
+    <li><strong>Low cost and latency:</strong> The model's throughput is essential for quick and cheap processing of notes at scale. Given that we have billions of notes to process, a difference in model size or inference efficiency can significantly impact costs and the total machine time.</li>
   </ul>
   <p>
     We used the <a href="https://huggingface.co/spaces/mteb/leaderboard" target="_blank" rel="noopener">MTEB leaderboard</a> to select our candidates, and we defined a custom evaluation framework for the final selection. MTEB is a public benchmark that evaluates embedding models with various datasets and retrieval task types. Given that our use case in Evernote is also quite broad, we considered the MTEB score a reliable prior for models' accuracy. At the time of testing, these were considered among the best lightweight models: <a href="https://huggingface.co/Alibaba-NLP/gte-Qwen2-1.5B-instruct" target="_blank" rel="noopener">Qwen2 1.5B Instruct</a>, <a href="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF" target="_blank" rel="noopener">Qwen3 Embedding 0.6B</a>, GTE Multilingual Base 0.4B, E5 Multilingual Large Instruct, and <a href="https://huggingface.co/Qwen/Qwen3-Embedding-8B" target="_blank" rel="noopener">Qwen3 Embedding 8B</a>.
@@ -1504,7 +1504,7 @@ print('hi')
     <li><strong><code>ocr</code></strong> &mdash; stores note metadata and the vector embeddings of OCR-extracted text from note attachments (images, PDFs, etc.). Metadata is duplicated here so that attachment search can be filtered natively without a cross-index intersection.</li>
   </ul>
   <p>
-    The fact that we have a single index for deterministic and semantic search, and that we separate notes and OCR indices, is a deliberate architectural choice.
+    Having a single index for deterministic and semantic search, and separating notes and OCR indices, are deliberate architectural choices.
   </p>
 
   <p><strong>A single index for keyword and semantic search in notes</strong></p>
@@ -1535,7 +1535,7 @@ print('hi')
   <!-- § 3.2 — LOAD BALANCER TUNING -->
   <h3 id="scaling">Load balancer and autoscaler finetuning</h3>
   <p>
-    Before deploying the pipeline to production, it needs to be tested and optimized at scale. A naive deployment strategy doesn't work at high request rates: requests get queued and canceled due to timeouts. By running the first test in which 1M notes were sent to the embedding deployment, we noticed that the autoscaler was not able to react to high load of requests.
+    Before deploying the pipeline to production, it needed to be tested and optimized at scale. A naive deployment strategy doesn't work at high request rates. Instead, requests get queued and canceled due to timeouts. By running the first test in which 1M notes were sent to the embedding deployment, we noticed that the autoscaler was not able to react to high load of requests.
   </p>
 
   <div class="before-after" style="grid-template-columns: 1fr;">
@@ -1552,7 +1552,7 @@ print('hi')
   </div>
 
   <p>
-    We ran a series of indexing experiments on the embedding pipeline to optimize error rates, latency, and throughput. We processed 1.5M notes in each run. Each experiment has a slightly different configuration with respect to the previous run, to spot which deployment parameters are relevant to the metrics. The key knobs to tweak are:
+    We ran a series of indexing experiments on the embedding pipeline to optimize error rates, latency, and throughput. We processed 1.5M notes in each run. Each experiment had a slightly different configuration compared to the previous run to identify which deployment parameters are relevant to the metrics. The key knobs to tweak were:
   </p>
   <ul>
     <li><strong>The number of requests to send in parallel to a GPU worker.</strong> If this is too low, the GPU memory is not saturated, and the throughput is suboptimal. If it is too large, workers are overwhelmed by requests, increasing latency and causing request loss.</li>
@@ -1590,7 +1590,7 @@ print('hi')
   </div>
 
   <p>
-    Our first integration was with the search experience. Evernote has always had a <a href="https://dev.evernote.com/doc/articles/search_grammar.php" target="_blank" rel="noopener">powerful search grammar</a> with <a href="https://help.evernote.com/hc/en-us/articles/208313828-Use-advanced-search-syntax" target="_blank" rel="noopener">advanced syntax</a> for filtering by notebook, tag, date, and more — but its learning curve can be steep. Quick Answer solves this: if the user types a question in the search bar, an LLM replies based on the chunks found relevant by semantic search, leveraging the full power of the search grammar under the hood. Users can find what they need without opening any note and without learning any syntax:
+    Our first integration was with the search experience. Evernote has always had a <a href="https://dev.evernote.com/doc/articles/search_grammar.php" target="_blank" rel="noopener">powerful search grammar</a> with <a href="https://help.evernote.com/hc/en-us/articles/208313828-Use-advanced-search-syntax" target="_blank" rel="noopener">advanced syntax</a> for filtering by notebook, tag, date, and more — but its learning curve can be steep. Quick Answer solves this: if the user types a question in the search bar, an LLM replies based on the chunks it finds relevant through semantic search, leveraging the full power of the search grammar under the hood. Users can find what they need without opening any notes and without learning any syntax, simply by asking natural questions like the following:
   </p>
   <ul>
     <li><em>"Book recommended at conference in Rome last year"</em></li>
