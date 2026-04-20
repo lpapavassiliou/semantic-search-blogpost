@@ -1077,7 +1077,7 @@
     <div class="hero-eyebrow">Evernote AI Engineering</div>
     <h1>Building Semantic Search <br>for <span class="gradient">9 Billion Notes</span></h1>
     <p class="hero-sub">
-      How we moved Evernote from keyword matching to meaning-based search — from choosing models to deploying on our own GPU infrastructure, all while keeping user data private.
+      How we moved Evernote from keyword matching to semantic search: model selection, embedding at scale, GPU infrastructure, and keeping user data private.
     </p>
     <div class="hero-meta">
       <div class="hero-meta-item">
@@ -1116,10 +1116,13 @@
   <!-- § 1 — A NEW SEARCH -->
   <h2 id="intro">A new kind of search</h2>
   <p>
-    Evernote users add content every day: notes, documents, images, PDFs, and more. Over time, accounts fill up, and finding something from months or years ago becomes a real challenge. The default search experience has a key limitation: it relies on <strong>exact keyword matching</strong>. If you can't remember the precise words you used in a note, you won't find it.
+    For millions of people Evernote is a <strong>second brain</strong>, a place where notes, documents, images, and PDFs can be securely stored and instantly retrieved when needed.
   </p>
   <p>
-    Semantic search solves this. Instead of matching letters, it matches <strong>meaning</strong>. This opens the door to natural wording and integration with powerful AI features like search overviews, Q&A on your notes, and automated note editing and organization. These tools can't rely on guessing exact keywords. They need a search layer that's flexible but accurate. Overall, semantic search can change Evernote's search experience from the ground up!
+    But over time, accounts fill up, and remembering exactly what you wrote months or years ago becomes increasingly difficult. That is precisely where the default search experience fails: it relies on <strong>exact keyword matching</strong>. If you can't remember the exact wording you used in a note, you won't find it.
+  </p>
+  <p>
+    Semantic search solves this. It surfaces exactly what you're looking for without exact string matching. It also opens the door to more powerful AI features built on top: search overviews, Q&A on your notes, and automated note editing and organization.
   </p>
 
   <p>
@@ -1150,7 +1153,7 @@
   </ul>
 
   <p>
-    Building this system required several key steps.
+    Building this system required four key steps: markdown conversion, embedding model selection, chunk size optimization, and reranking.
   </p>
 
   <!-- § 2.1 — MARKDOWN -->
@@ -1590,7 +1593,7 @@ print('hi')
     Our first integration was with the search experience. Evernote has always had a <a href="https://dev.evernote.com/doc/articles/search_grammar.php" target="_blank" rel="noopener">powerful search grammar</a> with <a href="https://help.evernote.com/hc/en-us/articles/208313828-Use-advanced-search-syntax" target="_blank" rel="noopener">advanced syntax</a> for filtering by notebook, tag, date, and more — but its learning curve can be steep. Quick Answer solves this: if the user types a question in the search bar, an LLM replies based on the chunks found relevant by semantic search, leveraging the full power of the search grammar under the hood. Users can find what they need without opening any note and without learning any syntax:
   </p>
   <ul>
-    <li><em>"What was the WiFi password from the hotel in Rome?"</em></li>
+    <li><em>"Book recommended at conference in Rome last year"</em></li>
     <li><em>"Find my notes about the technology choice for the backend in the notebook Swe-Team"</em></li>
     <li><em>"Summarize my notes tagged meeting from April 2024"</em></li>
   </ul>
@@ -1614,7 +1617,7 @@ print('hi')
   </div>
 
   <p>
-    Semantic search is extremely powerful when plugged into agents as a tool. Evernote's <a href="https://help.evernote.com/hc/en-us/articles/46319409880211-AI-Assistant" target="_blank" rel="noopener">AI Assistant</a> uses semantic search as its primary retrieval mechanism, turning a simple chat interface into a full productivity agent. When the user sends a message, the assistant decides whether a search is needed, formulates the query — including filters on notebooks, tags, or dates — and uses the retrieved notes to fulfill the request.
+    Semantic search becomes even more powerful when integrated deeper into the product. For example, Evernote's <a href="https://help.evernote.com/hc/en-us/articles/46319409880211-AI-Assistant" target="_blank" rel="noopener">AI Assistant</a> uses semantic search as its primary retrieval mechanism, turning a simple chat interface into a full productivity agent. When the user sends a message, the assistant decides whether a search is needed, formulates the query — including filters on notebooks, tags, or dates — and uses the retrieved notes to fulfill the request.
   </p>
   <p>
     This goes well beyond answering questions. Because the assistant can read, write, and organize notes, semantic search becomes the backbone of a wide range of automations:
